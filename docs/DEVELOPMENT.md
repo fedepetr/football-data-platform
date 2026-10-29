@@ -51,6 +51,46 @@ football-data-platform/
 
 Folders are created when the phase that needs them starts, not before.
 
+## Raw layer: load and refresh logic
+
+Seasons are identified everywhere by a 4-digit code (`2425`, `2526`, `2627`).
+Only `fdorg.py` converts it to the start year the API expects (`2627` -> `2026`).
+
+Each pipeline run, for a source and a season:
+
+1. **Extract** the full season from the source (one API call or CSV per
+   competition and endpoint).
+2. **Save** the response untouched to `data/raw/<source>/<season>/<file>`,
+   overwriting the previous file with the same name.
+3. **Load** the file into `raw.<source>_<entity>` in `data/fdp.duckdb`.
+
+How a JSON file is loaded (`load_raw_json`):
+
+- **One row per file.** The whole response goes into a `payload` JSON column,
+  untouched (schema-on-read). Unnesting and typing happen in dbt staging, so a
+  change in the source structure cannot break the raw load.
+- **Technical columns:** `_source_file` (path of the file), `_season`,
+  `_loaded_at` (load timestamp).
+- **Replace by file:** before inserting, rows with the same `_source_file` are
+  deleted. Re-running never duplicates data, and reloading Serie A does not
+  touch Premier League rows of the same season.
+- **One transaction:** delete and insert succeed or fail together; a broken file
+  raises an error and leaves the previous load in place.
+
+Example: `raw.fdorg_matches` holds one row per file, 6 rows in total
+(SA and PL x 3 seasons). Each row contains all the matches of that file.
+
+**Weekly refresh:** the current season (`2627`) is re-extracted in full and its
+rows are replaced; past seasons are not touched. The API returns the whole
+season in one call, so a full refresh costs the same as an incremental one
+and also picks up postponed matches and late score corrections.
+
+football-data.org client (`get_json`):
+
+- Fixed 6-second pause after every request (free tier: 10 requests/minute).
+- Retry on 429 and 5xx: up to 4 attempts, waiting 10s, 20s, 40s.
+- Other errors (e.g. 403 bad token, 404 wrong path) fail immediately.
+
 ## Phases
 
 ### Phase 0 – Skeleton
@@ -65,7 +105,7 @@ Folders are created when the phase that needs them starts, not before.
       idempotent replace of a season, arrival checks (min rows, required columns)
 - [ ] `ingest/couk.py`: full season download, `read_csv(union_by_name=true)`
 - [ ] `ingest/fdorg.py`: matches/teams/scorers, 10 req/min, retry on 429/5xx,
-      raw JSON saved, incremental window `last loaded date - 7 days`
+      raw JSON saved, full season refresh (see decision log)
 - [ ] `ingest/transfermarkt.py`: one-off full load of 7 tables, filtered to scope
 - [ ] Dagster ingestion assets partitioned by season
 - [ ] Each source: real sample inspected before coding, findings written below
@@ -155,7 +195,14 @@ Folders are created when the phase that needs them starts, not before.
 | --- | --- | --- |
 | 2026-10-29 | Repo private during development, public in phase 4 | Publish only when README and demo are ready |
 | 2026-10-29 | Feature branches + PR into `main`, Conventional Commits | Readable history, CI on PRs from phase 3 |
+| 2026-10-29 | Season code `2627` across the project, converted to `2026` only for the fdorg API | One key to compare the three sources |
+| 2026-10-29 | fdorg: full season refresh instead of the brief's incremental window (`last date - 7 days`) | One call returns the whole season: same cost, simpler replace, no missed postponed matches |
+| 2026-10-29 | Raw JSON stored as one row per file in a `payload` column (schema-on-read) | Raw load cannot break on source changes; typing done in dbt staging |
+| 2026-10-29 | Idempotent load by `_source_file`, not by season | Reloading one competition must not delete the other |
+| 2026-10-29 | Rate limit as a fixed 6s pause, not by reading API headers | Simple and enough: ~2 minutes for a full load |
 
 ## Known limitations
 
 - Transfermarkt data stops on 2026-07-06: no appearances for 2026/27.
+- fdorg client retries only 429 and 5xx (as in the brief): network errors and
+  timeouts fail the run, which is simply re-run.
