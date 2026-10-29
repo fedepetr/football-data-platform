@@ -10,7 +10,7 @@ Updated at the end of every phase.
 | --- | --- | --- |
 | 0 | Project skeleton, tooling, conventions | done |
 | 1 | Ingestion of the three sources into `raw` | done (PR pending) |
-| 2 | dbt staging and core, player reconciliation | in progress (staging, teams, matches done) |
+| 2 | dbt staging and core, player reconciliation | in progress (staging, teams, matches, players done; core facts left) |
 | 3 | Marts, data quality tests, Dagster schedule, CI | todo |
 | 4 | README, architecture diagram, demo | todo |
 
@@ -45,7 +45,8 @@ football-data-platform/
     ingest/{common,couk,fdorg,transfermarkt}.py  # common: shared helpers (paths, checks, loads)
     matching/teams.py                # team name matching (ordered letters, checks)
     matching/team_map.py             # team map draft: names + fixture votes
-    matching/players.py
+    matching/players.py              # player rules from the brief (normalise, score, bands)
+    matching/player_map.py           # player reconciliation run (candidates, checks, corrections)
     definitions.py                   # Dagster wiring only
   dbt/
     dbt_project.yml / profiles.yml   # profile points to ../data/fdp.duckdb
@@ -318,6 +319,88 @@ review the new `review` rows, update the seed.
   - `assert_every_played_match_is_mapped` (singular): every played couk and
     Transfermarkt match must reach a fixture.
 
+## Player reconciliation
+
+football-data.org players (2220 people from squads and scorers) are matched to
+Transfermarkt players (50149). Rules from the brief, in `matching/players.py`:
+
+1. **Normalisation**: unidecode, lowercase, punctuation removed, words in
+   alphabetical order (`Martínez Lautaro` = `Lautaro Martinez`). Apostrophes are
+   deleted rather than splitting words, because sources disagree on them
+   (`N'Diaye` / `Ndiaye`): 5 matches moved from review to auto with this.
+2. **Candidates**: same birth date, or same team and season (team through
+   `map_team`; Transfermarkt appearances for 2024/25 and 2025/26, the club in the
+   July 2026 snapshot for 2026/27). Birth date alone is not enough: 1527 players
+   share it with more than 5 Transfermarkt players (up to 25).
+3. **Score 0-100**: normalised Damerau-Levenshtein and `token_set_ratio`, the
+   higher wins (`match_method` records which). On equal scores, fewer edits win:
+   `token_set_ratio` gives 100 to any contained name (`Federico` vs `Federico
+   Dimarco`), the same problem as `Milan` for teams, solved the same way.
+4. **Bands**: above 92 `auto`, 80-92 `review`, below 80 `rejected`
+   (thresholds in `config/pipeline.yaml`).
+5. **Checks** turn `auto` into `review`: a real tie (same score and edits), a
+   collision (football-data.org players with *different* birth dates on the same
+   Transfermarkt player), or the team method (LCS) rating another candidate
+   higher. football-data.org sometimes has two ids for one person (same name and
+   birth date, e.g. Nikola Štulić 221315 / 145690): both may share a match.
+6. **Manual corrections**: `dbt/seeds/player_corrections.csv`
+   (`fdorg_person_id, tm_player_id, note`), re-read at every run; an empty
+   `tm_player_id` means "no match".
+
+The team method (ordered letters, LCS) was also tried as the main rule: 92.7%
+auto on birth-date candidates with no disagreement with exact-name matches. It
+is kept as an independent second opinion; the brief's measures are the main rule.
+
+Run: Dagster asset `matching/player_matches` (Python, between staging and core)
+or `uv run python -m fdp.matching.player_map`. It writes
+`matching.player_matches` (one row per football-data.org player with score,
+method, band, flags, candidate source). The blocking asset check
+`player_match_rate` requires at least 90% matched (`auto` + `manual`), so a drop
+stops `map_player` from being rebuilt. dbt `map_player` keeps every
+football-data.org player: `player_key` is `tm_<id>` when matched (shared by
+duplicate football-data.org ids), `fdorg_<id>` otherwise (`match_method`
+`unmatched`).
+
+Review on 2026-10-29: 32 rows in `review`, all decided by hand.
+
+- 27 nicknames or name variants with the same surname and birth date
+  (`William` / `Will Smallbone`, `Valentín` / `Taty Castellanos`, `Sávio` /
+  `Savinho`) and `Russ` / `Rhys Oakley`: confirmed.
+- 2 collisions with different birth dates on one Transfermarkt player: only the
+  football-data.org id whose birth date matches Transfermarkt was confirmed
+  (Éderson 81440, Ismaël Koné 177734); the other id is marked "no match" (Éderson
+  1689 born 1989, Koné 172183 born 06 instead of 16 June). Prudent choice:
+  accept a match only when name, team and birth date all agree.
+
+### Metrics (2026-10-29)
+
+Share of football-data.org players per band, after the review:
+
+| Band | Players | Share |
+| --- | --- | --- |
+| auto (score > 92, no failed check) | 2064 | 93.0% |
+| manual (reviewed and confirmed) | 30 | 1.4% |
+| **matched (auto + manual)** | **2094** | **94.3%** |
+| manual_no_match (reviewed, refused) | 2 | 0.1% |
+| rejected (score < 80) | 124 | 5.6% |
+
+Distribution of the best candidate's score (2220 players):
+
+| Score | Players |
+| --- | --- |
+| 100 | 2051 |
+| 95-99.9 | 9 |
+| 92.1-94.9 | 8 |
+| 80-92 (review band) | 28 |
+| 60-79.9 | 51 |
+| below 60 | 73 |
+
+- Matched players by candidate rule: both rules 1438, birth date only 618,
+  team and season only 38 (birth date differs or is missing in one source).
+- Automatic matches by method: Damerau-Levenshtein 1971, `token_set_ratio` 93.
+- Rejected players are mostly young squad players missing from Transfermarkt:
+  their best candidate is an unrelated person (`Simone Ascione` -> `Weliton`).
+
 ## Phases
 
 ### Phase 0 – Skeleton
@@ -349,8 +432,8 @@ review the new `review` rows, update the seed.
 - [x] Staging models for the three sources (12 models, 48 tests)
 - [x] dbt models as Dagster assets (`dagster-dbt`), lineage raw -> staging
 - [x] Team mapping seed (drafted by name + fixture matching, reviewed), `dim_team`, `map_team`, `map_match`
-- [ ] `matching/players.py` + tests (normalisation, scoring, thresholds)
-- [ ] Manual corrections table, `map_player`, match-rate asset check (>= 90%)
+- [x] `matching/players.py` + tests (normalisation, scoring, thresholds)
+- [x] Manual corrections table, `map_player`, match-rate asset check (>= 90%): 94.3% matched
 - [ ] Dimensions and facts in `core`
 
 ### Phase 3 – Marts, quality, CI
@@ -494,9 +577,22 @@ review the new `review` rows, update the seed.
 | 2026-10-29 | Wrong match removed rather than kept (Coventry City / Transfermarkt) | A missing, declared reference is better than a wrong, silent one (it would duplicate Leicester's data) |
 | 2026-10-29 | football-data.org as hub for teams and matches | It has every team and fixture of every season, including 2026/27 and future matches |
 | 2026-10-29 | Readable keys (`man_united`, `2526_inter_milan`) instead of hashes | Easy to read in reviews and debugging; unique by construction (tested) |
+| 2026-10-29 | Brief's player score as main rule, team LCS method as second opinion | The brief fixes the method; the LCS method was benchmarked (92.7% auto) and kept as a cross-check |
+| 2026-10-29 | Ties on player score broken by fewer edits (Damerau-Levenshtein) | token_set_ratio scores contained names at 100; same idea as the team tie-break |
+| 2026-10-29 | Apostrophes deleted in player names, not used as separators | Sources disagree (`N'Diaye` / `Ndiaye`); "no punctuation" applied to person names |
+| 2026-10-29 | Collision only when birth dates differ | football-data.org has duplicate ids for one person; they may share a match |
+| 2026-10-29 | `review` is not a match until confirmed in the corrections file | Only reviewed decisions count; the asset check counts auto + manual |
+| 2026-10-29 | Doubtful duplicates not confirmed (Éderson 1689, Koné 172183) | Accept a match only when name, team and birth date agree |
+| 2026-10-29 | `map_player` keeps unmatched football-data.org players with `fdorg_<id>` keys | Facts from football-data.org (season scoring) always find a player |
+| 2026-10-29 | Blocking asset check on the match rate | A quality drop stops downstream models instead of spreading bad data |
 
 ## Known limitations
 
+- 5.6% of football-data.org players are not matched to Transfermarkt (mostly
+  young squad players not in the Transfermarkt dataset): they have no market
+  value or Transfermarkt appearances.
+- Player candidates for 2026/27 by team use the Transfermarkt club of July 2026:
+  players who moved after the snapshot are found by birth date only.
 - Coventry City (2026/27) has no Transfermarkt club: the dataset only covers
   clubs of the leagues it follows. No data is lost (Transfermarkt has no 2026/27).
 - Sequential runs only (DuckDB single writer). Parallel loads would need a
