@@ -3,7 +3,7 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from fdp.ingest.common import load_raw_json, raw_dir, save_raw
+from fdp.ingest.common import load_raw_json, raw_dir, rebuild_raw_csv_table, save_raw
 
 
 def test_raw_dir_default_data_folder() -> None:
@@ -112,3 +112,34 @@ def test_load_raw_json_rejects_unsafe_table_name(
 
     with pytest.raises(ValueError):
         load_raw_json(con, path, "matches; DROP TABLE x", "2627")
+
+
+def test_rebuild_raw_csv_table_unions_columns_by_name(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path
+) -> None:
+    """Files with different columns are aligned by name; missing values are NULL, all text."""
+    save_raw(b"Div,FTHG\nI1,2\n", raw_dir("couk", "2425", tmp_path) / "I1.csv")
+    save_raw(b"Div,FTHG,HxG\nI1,1,1.05\n", raw_dir("couk", "2627", tmp_path) / "I1.csv")
+
+    rebuild_raw_csv_table(con, "couk_matches", tmp_path / "raw" / "couk" / "*" / "*.csv")
+
+    rows = con.execute(
+        "SELECT _season, Div, FTHG, HxG FROM raw.couk_matches ORDER BY _season"
+    ).fetchall()
+    assert rows == [("2425", "I1", "2", None), ("2627", "I1", "1", "1.05")]
+
+
+def test_rebuild_raw_csv_table_reflects_files_on_disk(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path
+) -> None:
+    """Rebuilding after a file is replaced gives its new rows only: no duplicates."""
+    path = raw_dir("couk", "2627", tmp_path) / "I1.csv"
+    pattern = tmp_path / "raw" / "couk" / "*" / "*.csv"
+    save_raw(b"Div,FTHG\nI1,1\n", path)
+    rebuild_raw_csv_table(con, "couk_matches", pattern)
+
+    save_raw(b"Div,FTHG\nI1,1\nI1,3\n", path)  # weekly refresh: one more match played
+    rebuild_raw_csv_table(con, "couk_matches", pattern)
+
+    rows = con.execute("SELECT FTHG, _source_file FROM raw.couk_matches ORDER BY 1").fetchall()
+    assert rows == [("1", str(path)), ("3", str(path))]

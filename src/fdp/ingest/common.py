@@ -84,3 +84,34 @@ def load_raw_json(con: duckdb.DuckDBPyConnection, path: Path, table: str, season
     except Exception:
         con.rollback()
         raise
+
+
+def rebuild_raw_csv_table(con: duckdb.DuckDBPyConnection, table: str, pattern: Path) -> None:
+    """Rebuild raw.<table> from every CSV file matching `pattern`, one row per CSV line.
+
+    Files of different seasons have different columns: `union_by_name` aligns them
+    by name, filling missing ones with NULL. All values are read as text
+    (`all_varchar`): no type guessing in the raw layer, typing happens in staging.
+
+    Idempotent by construction: the raw files on disk are the source of truth and
+    the table is recreated from them in one statement, so it can never hold
+    duplicated or stale rows. If the statement fails, the previous table stays.
+    """
+    # Same protection as load_raw_json: the table name goes into the SQL text.
+    if not table.isidentifier():
+        raise ValueError(f"Invalid table name: {table!r}")
+
+    con.execute("CREATE SCHEMA IF NOT EXISTS raw")
+    con.execute(
+        f"""
+        CREATE OR REPLACE TABLE raw.{table} AS
+        SELECT
+            * EXCLUDE (filename),
+            filename AS _source_file,
+            -- data/raw/<source>/<season>/<file>.csv: the season is the parent folder.
+            string_split(filename, '/')[-2] AS _season,
+            current_timestamp AS _loaded_at
+        FROM read_csv(?, union_by_name = true, all_varchar = true, filename = true)
+        """,
+        [str(pattern)],
+    )

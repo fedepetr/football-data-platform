@@ -42,3 +42,14 @@ sources:
         min_items: 1 # varies during the season; empty means a problem
         params:
           limit: 1000 # default is 10: raise it to get every player with a goal
+
+  couk:
+    # Files are at <base_url>/<season>/<competition>.csv, e.g. .../2627/I1.csv.
+    # Season codes match the project ones: no conversion needed.
+    base_url: https://www.football-data.co.uk/mmz4281
+    timeout_seconds: 30
+    # Arrival checks on each CSV: these columns must exist, with at least `min_rows` matches.
+    # Only 1 row: the current season holds played matches only (0 before kickoff).
+    # Completeness (380 matches per finished season) is a dbt test in phase 3.
+    min_rows: 1
+    required_columns: [Div, Date, HomeTeam, AwayTeam, FTHG, FTAG, FTR]
