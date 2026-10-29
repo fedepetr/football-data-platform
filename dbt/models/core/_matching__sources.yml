@@ -1,0 +1,12 @@
+# Table written by the Python player reconciliation (src/fdp/matching/player_map.py,
+# Dagster asset matching/player_matches): one row per football-data.org player.
+# Source "matching" + table name = Dagster asset key ["matching", "player_matches"].
+sources:
+  - name: matching
+    schema: matching
+    tables:
+      - name: player_matches
+        description: >
+          Best Transfermarkt candidate for each football-data.org player, with score,
+          method, band (auto, review, rejected, manual, manual_no_match, no_candidates)
+          and flags.
