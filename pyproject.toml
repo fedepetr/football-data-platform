@@ -8,6 +8,8 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "dagster>=1.13.27",
+    "dagster-webserver>=1.13.27",
     "duckdb>=2.0.0",
     "httpx>=0.28.1",
     "python-dotenv>=1.2.4",
@@ -34,3 +36,7 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.dagster]
+# `uv run dagster dev` loads the Dagster definitions from this module.
+module_name = "fdp.definitions"

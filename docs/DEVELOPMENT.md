@@ -8,8 +8,8 @@ Updated at the end of every phase.
 
 | Phase | Scope | Status |
 | --- | --- | --- |
-| 0 | Project skeleton, tooling, conventions | in progress |
-| 1 | Ingestion of the three sources into `raw` | todo |
+| 0 | Project skeleton, tooling, conventions | done |
+| 1 | Ingestion of the three sources into `raw` | done (PR pending) |
 | 2 | dbt staging and core, player reconciliation | todo |
 | 3 | Marts, data quality tests, Dagster schedule, CI | todo |
 | 4 | README, architecture diagram, demo | todo |
@@ -178,8 +178,33 @@ Transfermarkt ingestion (`transfermarkt.py`):
 
 Logging: every ingestion step logs a line while it runs (`requesting`,
 `downloading`, `loaded ... (N rows)`), and fdorg retries log a `WARNING`.
-`setup_logging()` is called only by the command line entry points; pytest
-and Dagster handle logs themselves.
+`setup_logging()` is called by the command line entry points and at the start
+of each Dagster asset (without it Python shows only warnings); pytest captures
+logs itself.
+
+## Orchestration (Dagster)
+
+`src/fdp/definitions.py` only wires the ingestion functions as assets; all logic
+stays in `ingest/`. Start the UI with `uv run dagster dev` (http://127.0.0.1:3000):
+`[tool.dagster] module_name` in `pyproject.toml` points to the definitions, and
+`dagster dev` reads `.env` for the football-data.org token.
+
+| Asset (multi-asset) | Produces | Partitions | Metadata in the UI |
+| --- | --- | --- | --- |
+| `fdorg_raw` | `raw/fdorg_matches`, `raw/fdorg_teams`, `raw/fdorg_scorers` | seasons | items loaded |
+| `couk_raw` | `raw/couk_matches` | seasons | matches |
+| `transfermarkt_raw` | `raw/transfermarkt_<table>` (7 tables) | none (snapshot) | rows |
+
+- One asset per raw table, keyed `["raw", "<table>"]` like the DuckDB table:
+  dagster-dbt will link dbt sources to them by name in phase 2.
+- Season partitions (`2425`, `2526`, `2627`) come from `config/pipeline.yaml`.
+- DuckDB allows a single writer, so:
+  - `in_process_executor`: the steps of a run execute one after the other;
+  - `BackfillPolicy.single_run()`: a backfill of several seasons is one run
+    looping over `context.partition_keys`, not parallel runs.
+  - Do not run other scripts on `data/fdp.duckdb` while Dagster writes to it.
+- Run one partition from the command line:
+  `uv run dagster asset materialize -m fdp.definitions --select raw/couk_matches --partition 2627`
 
 ## Phases
 
@@ -204,8 +229,8 @@ and Dagster handle logs themselves.
 - [x] `ingest/transfermarkt.py`: one-off full load of 7 tables, games and appearances
       filtered to scope, arrival checks (games 1520, appearances 46873)
 - [x] Progress logging in all ingestion modules
-- [ ] Dagster ingestion assets partitioned by season
-- [ ] Each source: real sample inspected before coding, findings written below
+- [x] Dagster ingestion assets partitioned by season (`definitions.py`), checked with a real run
+- [x] Each source: real sample inspected before coding, findings written below
 
 ### Phase 2 – Staging, core, reconciliation
 - [ ] dbt project wired to DuckDB, sources declared on `raw`
@@ -342,9 +367,13 @@ and Dagster handle logs themselves.
 | 2026-10-29 | `check_csv` and `season_start_year` moved to `common.py` | Used by more than one source |
 | 2026-10-29 | Logging with the standard `logging` module, one logger per module | Long downloads looked stuck without progress messages |
 | 2026-10-29 | Dagster wired after all three sources are ingested | Set it up once, knowing every source; logic stays in tested functions |
+| 2026-10-29 | One Dagster asset per raw table (multi-assets), keys `["raw", "<table>"]` | dagster-dbt links dbt sources to assets with the same name |
+| 2026-10-29 | Sequential execution: in-process executor + single-run backfills | DuckDB allows one writer; the bottleneck is the API rate limit, not compute |
 
 ## Known limitations
 
+- Sequential runs only (DuckDB single writer). Parallel loads would need a
+  multi-writer database or one DuckDB file per source.
 - Transfermarkt data stops on 2026-07-06: no appearances for 2026/27.
 - Transfermarkt files come from the dataset author's public bucket: the URL may
   change; the Kaggle dataset `davidcariboo/player-scores` is the fallback.
