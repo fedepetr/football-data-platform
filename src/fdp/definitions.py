@@ -16,6 +16,7 @@ from dagster_dbt import DbtCliResource, DbtProject, dbt_assets
 from fdp.config import load_config
 from fdp.ingest import couk, fdorg, transfermarkt
 from fdp.ingest.common import connect, setup_logging
+from fdp.matching import player_map
 
 # Season partitions from config/pipeline.yaml: "2425", "2526", "2627".
 SEASONS = dg.StaticPartitionsDefinition(load_config()["seasons"])
@@ -113,6 +114,60 @@ def transfermarkt_raw() -> Iterator[dg.MaterializeResult]:
             )
 
 
+PLAYER_MATCHES = dg.AssetKey(["matching", "player_matches"])
+MIN_MATCH_RATE: float = load_config()["matching"]["players"]["min_match_rate"]
+
+
+@dg.asset(
+    key=PLAYER_MATCHES,
+    group_name="matching",
+    kinds={"python", "duckdb"},
+    description="football-data.org players matched to Transfermarkt players, one row per player",
+    # Inputs: the staging players of both sources, the team map (team and season
+    # candidates) and the reviewed corrections. dbt builds them before this asset.
+    deps=[
+        dg.AssetKey(["staging", "stg_fdorg__squad_players"]),
+        dg.AssetKey(["staging", "stg_fdorg__scorers"]),
+        dg.AssetKey(["staging", "stg_transfermarkt__players"]),
+        dg.AssetKey(["staging", "stg_transfermarkt__appearances"]),
+        dg.AssetKey(["core", "map_team"]),
+        dg.AssetKey(["seeds", "player_corrections"]),
+    ],
+)
+def player_matches() -> dg.MaterializeResult:
+    """Python step between staging and core: run the player reconciliation."""
+    setup_logging()
+    with connect() as con:
+        rows = player_map.run(con)
+    bands = player_map.band_counts(rows)
+    return dg.MaterializeResult(
+        metadata={
+            "players": len(rows),
+            "match_rate": round(player_map.match_rate(rows), 4),
+            **{f"band_{band}": count for band, count in sorted(bands.items())},
+        }
+    )
+
+
+@dg.asset_check(asset=PLAYER_MATCHES, blocking=True)
+def player_match_rate() -> dg.AssetCheckResult:
+    """At least 90% of football-data.org players matched (auto or manual).
+
+    Blocking: if it fails, the models that use the matches (map_player and the
+    player tables built on it) are not materialized with bad data.
+    """
+    with connect() as con:
+        players, matched = con.execute(
+            "select count(*), count(*) filter (where band in ('auto', 'manual')) "
+            "from matching.player_matches"
+        ).fetchone()
+    rate = matched / players if players else 0.0
+    return dg.AssetCheckResult(
+        passed=rate >= MIN_MATCH_RATE,
+        metadata={"match_rate": round(rate, 4), "threshold": MIN_MATCH_RATE, "matched": matched},
+    )
+
+
 @dbt_assets(manifest=DBT_PROJECT.manifest_path)
 def dbt_models(context: dg.AssetExecutionContext, dbt: DbtCliResource) -> Iterator:
     """Every dbt model is an asset and every dbt test an asset check.
@@ -124,7 +179,8 @@ def dbt_models(context: dg.AssetExecutionContext, dbt: DbtCliResource) -> Iterat
 
 
 defs = dg.Definitions(
-    assets=[fdorg_raw, couk_raw, transfermarkt_raw, dbt_models],
+    assets=[fdorg_raw, couk_raw, transfermarkt_raw, player_matches, dbt_models],
+    asset_checks=[player_match_rate],
     resources={"dbt": DbtCliResource(project_dir=DBT_PROJECT)},
     # Steps of a run execute one after the other: DuckDB allows a single writer.
     executor=dg.in_process_executor,

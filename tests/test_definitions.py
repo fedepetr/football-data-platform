@@ -32,3 +32,18 @@ def test_dbt_staging_models_depend_on_raw_assets() -> None:
     graph = defs.resolve_asset_graph()
     parents = graph.get(dg.AssetKey(["staging", "stg_couk__matches"])).parent_keys
     assert parents == {dg.AssetKey(["raw", "couk_matches"])}
+
+
+def test_player_matching_sits_between_staging_and_core() -> None:
+    """The Python reconciliation reads staging and map_team; dbt map_player reads it."""
+    graph = defs.resolve_asset_graph()
+    matches = dg.AssetKey(["matching", "player_matches"])
+    assert dg.AssetKey(["core", "map_team"]) in graph.get(matches).parent_keys
+    assert graph.get(dg.AssetKey(["core", "map_player"])).parent_keys == {matches}
+
+
+def test_player_match_rate_check_is_blocking() -> None:
+    """The match-rate check exists on the matches and blocks downstream on failure."""
+    check = dg.AssetCheckKey(dg.AssetKey(["matching", "player_matches"]), "player_match_rate")
+    assert check in defs.resolve_asset_graph().asset_check_keys
+    assert defs.resolve_asset_graph().get_check_spec(check).blocking

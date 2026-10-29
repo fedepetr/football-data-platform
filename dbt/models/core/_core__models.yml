@@ -57,3 +57,27 @@ models:
               arguments:
                 to: ref('dim_team')
                 field: team_key
+
+  - name: map_player
+    description: >
+      Player references across sources, one row per football-data.org player.
+      Matched players (auto or manual) carry their Transfermarkt id; the others
+      keep a football-data.org based player_key and match_method "unmatched".
+    columns:
+      - name: player_key
+        description: tm_<Transfermarkt id> when matched, fdorg_<football-data.org id> otherwise.
+        data_tests: [not_null]
+      - name: fdorg_person_id
+        data_tests: [unique, not_null]
+      - name: tm_player_id
+        description: NULL when the player is not matched.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('stg_transfermarkt__players')
+                field: tm_player_id
+      - name: match_method
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["damerau_levenshtein", "token_set", "manual", "unmatched"]

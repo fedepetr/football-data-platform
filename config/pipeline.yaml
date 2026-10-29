@@ -84,3 +84,13 @@ sources:
         required_columns: [player_id, date, market_value_in_eur]
       transfers:
         required_columns: [player_id, transfer_date]
+
+# Player reconciliation (football-data.org -> Transfermarkt), rules from the brief.
+matching:
+  players:
+    # Score 0-100: above `auto` matched automatically, from `review` to `auto`
+    # kept for manual review, below `review` rejected.
+    auto_threshold: 92
+    review_threshold: 80
+    # Asset check: share of football-data.org players matched (auto, reviewed or corrected).
+    min_match_rate: 0.90
