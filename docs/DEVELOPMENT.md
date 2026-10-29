@@ -37,8 +37,11 @@ football-data-platform/
   .env.example
   README.md
   docs/DEVELOPMENT.md
+  config/pipeline.yaml               # seasons, competitions, source parameters
   data/raw/<source>/<season>/        # git-ignored, recreated by the pipeline
+  data/fdp.duckdb                    # git-ignored, single database for all layers
   src/fdp/
+    config.py                        # reads config/pipeline.yaml
     ingest/{common,couk,fdorg,transfermarkt}.py
     matching/players.py
     definitions.py                   # Dagster wiring only
@@ -50,6 +53,25 @@ football-data-platform/
 ```
 
 Folders are created when the phase that needs them starts, not before.
+
+## Configuration
+
+`config/pipeline.yaml` is the single place for pipeline parameters:
+
+- `seasons` in scope and the `current_season` refreshed weekly;
+- `competitions`, each with its code in every source
+  (Serie A: `SA` in fdorg, `I1` in couk; Premier League: `PL`, `E0`);
+- per-source settings, e.g. fdorg base URL, rate limit, timeout, retry policy
+  and endpoints with their extra parameters.
+
+Rules:
+
+- Secrets never go in the YAML (it is committed): tokens stay in `.env`.
+- Only values live in the YAML; logic (how to retry, how to load) stays in code.
+- Season codes are quoted (`"2627"`): unquoted, YAML reads them as numbers.
+  `tests/test_config.py` fails if that happens.
+- Read with `yaml.safe_load`, once, when an ingestion module is imported.
+  The path is relative, so commands run from the project root.
 
 ## Raw layer: load and refresh logic
 
@@ -87,8 +109,12 @@ and also picks up postponed matches and late score corrections.
 
 football-data.org client (`get_json`):
 
-- Fixed 6-second pause after every request (free tier: 10 requests/minute).
+- Fixed pause after every request, computed as `60 / requests_per_minute`
+  (6 seconds on the free tier: 10 requests/minute).
 - Retry on 429 and 5xx: up to 4 attempts, waiting 10s, 20s, 40s.
+- All these values come from `config/pipeline.yaml`.
+- Run one season by hand: `uv run python -m fdp.ingest.fdorg 2627`
+  (6 calls, ~40 seconds).
 - Other errors (e.g. 403 bad token, 404 wrong path) fail immediately.
 
 ## Phases
@@ -98,14 +124,17 @@ football-data.org client (`get_json`):
 - [x] Dev dependencies (pytest, ruff); runtime dependencies are added in the phase that needs them
 - [x] `.env.example`, `data/raw/.gitkeep`, `docs/DEVELOPMENT.md`
 - [x] ruff and pytest configured in `pyproject.toml`, one smoke test passing
-- [ ] Credentials created: football-data.org token, Kaggle API key, local `.env`
+- [ ] Credentials created: football-data.org token (done), Kaggle API key (pending), local `.env`
 
 ### Phase 1 – Ingestion (raw layer)
-- [ ] `ingest/common.py`: DuckDB connection, raw paths, technical columns,
-      idempotent replace of a season, arrival checks (min rows, required columns)
+- [x] `config/pipeline.yaml` + `config.py`: seasons, competitions, source parameters
+- [x] `ingest/common.py`: DuckDB connection, raw paths, save raw files,
+      idempotent JSON load with technical columns
+- [ ] Arrival checks (min rows, required columns): postponed, required by the brief
 - [ ] `ingest/couk.py`: full season download, `read_csv(union_by_name=true)`
-- [ ] `ingest/fdorg.py`: matches/teams/scorers, 10 req/min, retry on 429/5xx,
+- [x] `ingest/fdorg.py`: matches/teams/scorers, 10 req/min, retry on 429/5xx,
       raw JSON saved, full season refresh (see decision log)
+- [ ] fdorg loaded for all seasons (2627 done; 2425 and 2526 to run)
 - [ ] `ingest/transfermarkt.py`: one-off full load of 7 tables, filtered to scope
 - [ ] Dagster ingestion assets partitioned by season
 - [ ] Each source: real sample inspected before coding, findings written below
@@ -200,6 +229,8 @@ football-data.org client (`get_json`):
 | 2026-10-29 | Raw JSON stored as one row per file in a `payload` column (schema-on-read) | Raw load cannot break on source changes; typing done in dbt staging |
 | 2026-10-29 | Idempotent load by `_source_file`, not by season | Reloading one competition must not delete the other |
 | 2026-10-29 | Rate limit as a fixed 6s pause, not by reading API headers | Simple and enough: ~2 minutes for a full load |
+| 2026-10-29 | Pipeline parameters in `config/pipeline.yaml` instead of code constants | One place to see and change what is loaded; code only holds logic |
+| 2026-10-29 | Arrival checks postponed to the end of phase 1 | Get the extract-save-load chain working first |
 
 ## Known limitations
 
