@@ -42,3 +42,38 @@ models:
           - accepted_values:
               arguments:
                 values: ["transfermarkt", "fdorg"]
+
+  - name: mart_similar_players
+    description: >
+      For each player and completed season (at least 900 minutes), the 5 most
+      similar players of the same position by statistics per 90 minutes
+      (goals, assists, yellow and red cards, share of minutes), standardised as
+      z-scores within season and position. Distance is Euclidean; similarity is
+      100 / (1 + distance).
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "player_key || '_' || season_key || '_' || similarity_rank"
+    columns:
+      - name: player_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_player')
+                field: player_key
+      - name: similar_player_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_player')
+                field: player_key
+      - name: similarity_rank
+        description: 1 = most similar.
+        data_tests: [not_null]
+      - name: position
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["Goalkeeper", "Defender", "Midfield", "Attack"]
