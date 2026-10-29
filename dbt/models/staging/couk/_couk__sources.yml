@@ -1,0 +1,8 @@
+# Raw table rebuilt by src/fdp/ingest/couk.py from every season CSV:
+# one row per match, all columns as text, aligned by name across seasons.
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: couk_matches
+        description: football-data.co.uk match results and statistics (Serie A I1, Premier League E0).

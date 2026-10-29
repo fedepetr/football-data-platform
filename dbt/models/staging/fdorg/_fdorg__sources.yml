@@ -1,0 +1,13 @@
+# Raw tables loaded by src/fdp/ingest/fdorg.py: one row per API response file,
+# with the whole response in `payload` (JSON). Unnested in the staging models.
+# Source "raw" + table name = Dagster asset key ["raw", "<table>"]: dagster-dbt links them.
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: fdorg_matches
+        description: football-data.org /competitions/{code}/matches, one row per competition and season.
+      - name: fdorg_teams
+        description: football-data.org /competitions/{code}/teams (teams and squads), one row per competition and season.
+      - name: fdorg_scorers
+        description: football-data.org /competitions/{code}/scorers, one row per competition and season.

@@ -1,0 +1,14 @@
+# Raw tables loaded by src/fdp/ingest/transfermarkt.py from the public dataset files:
+# one row per CSV line, all columns as text. Games and appearances are already
+# filtered to the competitions and seasons in scope.
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: transfermarkt_competitions
+      - name: transfermarkt_clubs
+      - name: transfermarkt_players
+      - name: transfermarkt_games
+      - name: transfermarkt_appearances
+      - name: transfermarkt_player_valuations
+      - name: transfermarkt_transfers
