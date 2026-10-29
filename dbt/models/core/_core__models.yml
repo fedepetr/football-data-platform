@@ -305,3 +305,41 @@ models:
                 field: team_key
       - name: transfer_fee_eur
         description: 0 means either a free transfer or an unknown fee.
+
+  - name: fct_player_season_scoring
+    description: >
+      Goals and assists per player, competition and season from football-data.org
+      (players with at least one goal; the only scoring source for 2026/27).
+      Missing assists and penalties are read as 0 (assists_reported tells which).
+      Assist counts differ between sources (69% agreement with Transfermarkt).
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "player_key || '_' || competition_key || '_' || season_key"
+    columns:
+      - name: player_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_player')
+                field: player_key
+      - name: season_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_season')
+                field: season_key
+      - name: team_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_team')
+                field: team_key
+      - name: goals
+        data_tests: [not_null]
+      - name: assists
+        description: Assists; 0 when the source gives none (see assists_reported).
+        data_tests: [not_null]
+      - name: assists_reported
+        description: True if football-data.org gave the number, false if 0 was inferred.
