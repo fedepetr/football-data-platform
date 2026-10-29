@@ -343,7 +343,14 @@ Transfermarkt players (50149). Rules from the brief, in `matching/players.py`:
    Transfermarkt player), or the team method (LCS) rating another candidate
    higher. football-data.org sometimes has two ids for one person (same name and
    birth date, e.g. Nikola Štulić 221315 / 145690): both may share a match.
-6. **Manual corrections**: `dbt/seeds/player_corrections.csv`
+6. **Reverse check on rejected matches**: a rejected candidate proposed by both
+   rules (same birth date AND same team and season) gets the flag
+   `same_birth_date_and_team` and is listed for review; the band stays
+   `rejected`, as the brief asks. Found while designing `dim_player`: 107
+   Transfermarkt players with appearances in scope were not matched, and some
+   were the same people under a different part of their full name
+   (`Max` / `Maximilian Kilman`, `André` / `Frank Zambo Anguissa`).
+7. **Manual corrections**: `dbt/seeds/player_corrections.csv`
    (`fdorg_person_id, tm_player_id, note`), re-read at every run; an empty
    `tm_player_id` means "no match".
 
@@ -372,6 +379,12 @@ Review on 2026-10-29: 32 rows in `review`, all decided by hand.
   1689 born 1989, Koné 172183 born 06 instead of 16 June). Prudent choice:
   accept a match only when name, team and birth date all agree.
 
+Second review (reverse check): 14 rejected rows with the same birth date, team,
+season, nationality and position, all confirmed. The names use different parts
+of the full name (`Abdul Fatawu Issahaku`, `Oliver Provstgaard Nielsen`,
+`Hwang Heechan` / `Hee-chan Hwang`). The 93 Transfermarkt players with
+appearances still unmatched are not in any football-data.org squad.
+
 ### Metrics (2026-10-29)
 
 Share of football-data.org players per band, after the review:
@@ -379,10 +392,10 @@ Share of football-data.org players per band, after the review:
 | Band | Players | Share |
 | --- | --- | --- |
 | auto (score > 92, no failed check) | 2064 | 93.0% |
-| manual (reviewed and confirmed) | 30 | 1.4% |
-| **matched (auto + manual)** | **2094** | **94.3%** |
+| manual (reviewed and confirmed) | 44 | 2.0% |
+| **matched (auto + manual)** | **2108** | **95.0%** |
 | manual_no_match (reviewed, refused) | 2 | 0.1% |
-| rejected (score < 80) | 124 | 5.6% |
+| rejected (score < 80) | 110 | 5.0% |
 
 Distribution of the best candidate's score (2220 players):
 
@@ -433,7 +446,7 @@ Distribution of the best candidate's score (2220 players):
 - [x] dbt models as Dagster assets (`dagster-dbt`), lineage raw -> staging
 - [x] Team mapping seed (drafted by name + fixture matching, reviewed), `dim_team`, `map_team`, `map_match`
 - [x] `matching/players.py` + tests (normalisation, scoring, thresholds)
-- [x] Manual corrections table, `map_player`, match-rate asset check (>= 90%): 94.3% matched
+- [x] Manual corrections table, `map_player`, match-rate asset check (>= 90%): 95.0% matched
 - [ ] Dimensions and facts in `core`
 
 ### Phase 3 – Marts, quality, CI
@@ -584,11 +597,12 @@ Distribution of the best candidate's score (2220 players):
 | 2026-10-29 | `review` is not a match until confirmed in the corrections file | Only reviewed decisions count; the asset check counts auto + manual |
 | 2026-10-29 | Doubtful duplicates not confirmed (Éderson 1689, Koné 172183) | Accept a match only when name, team and birth date agree |
 | 2026-10-29 | `map_player` keeps unmatched football-data.org players with `fdorg_<id>` keys | Facts from football-data.org (season scoring) always find a player |
+| 2026-10-29 | Reverse check: rejected matches with same birth date and team listed for review | Brief thresholds kept, but strong evidence is not discarded without a human look; avoids duplicate players in dim_player |
 | 2026-10-29 | Blocking asset check on the match rate | A quality drop stops downstream models instead of spreading bad data |
 
 ## Known limitations
 
-- 5.6% of football-data.org players are not matched to Transfermarkt (mostly
+- 5.0% of football-data.org players are not matched to Transfermarkt (mostly
   young squad players not in the Transfermarkt dataset): they have no market
   value or Transfermarkt appearances.
 - Player candidates for 2026/27 by team use the Transfermarkt club of July 2026:

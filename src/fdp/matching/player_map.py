@@ -11,7 +11,11 @@ For every football-data.org player (squads and scorers):
    the LCS second opinion rating another candidate higher. football-data.org
    sometimes has two ids for one person (same name and birth date): both may
    point to the same Transfermarkt player, that is not a collision.
-4. Manual corrections (dbt/seeds/player_corrections.csv), re-read at every run,
+4. Reverse check on rejected matches: if the candidate was proposed by both rules
+   (same birth date AND same team and season) the name is probably a variant the
+   score cannot see (`Max` / `Maximilian Kilman`). The band stays "rejected", as
+   the brief asks, but the flag same_birth_date_and_team lists it for review.
+5. Manual corrections (dbt/seeds/player_corrections.csv), re-read at every run,
    override everything.
 The result is written to matching.player_matches (one row per football-data.org
 player); the dbt model map_player keeps the accepted matches.
@@ -124,9 +128,15 @@ def candidate_source(tm_id: int, by_birth_date: set[int], by_team: set[int]) -> 
     return "birth_date" if tm_id in by_birth_date else "team_season"
 
 
-def flags(match: PlayerMatch, collided: bool) -> list[str]:
-    """Reasons to doubt a match; any flag turns "auto" into "review"."""
+def flags(match: PlayerMatch, collided: bool, source: str) -> list[str]:
+    """Reasons to look at a match by hand.
+
+    On an "auto" match, any flag turns it into "review". On a "rejected" match,
+    same_birth_date_and_team marks strong evidence against the low name score.
+    """
     reasons = []
+    if match.band == "rejected":
+        return ["same_birth_date_and_team"] if source == "both" else []
     if match.tie:
         reasons.append("tie")
     if collided:
@@ -187,16 +197,17 @@ def match_players(
         if match is None:
             row |= {"band": "no_candidates", "flags": ""}
         else:
-            reasons = flags(match, collided=match.tm_player_id in collided)
+            source = candidate_source(
+                match.tm_player_id, by_birth_date.get(pid, set()), by_team.get(pid, set())
+            )
+            reasons = flags(match, collided=match.tm_player_id in collided, source=source)
             band = "review" if match.band == "auto" and reasons else match.band
             row |= {
                 "tm_player_id": match.tm_player_id,
                 "tm_player_name": match.tm_player_name,
                 "match_score": match.score,
                 "match_method": match.method,
-                "candidate_source": candidate_source(
-                    match.tm_player_id, by_birth_date.get(pid, set()), by_team.get(pid, set())
-                ),
+                "candidate_source": source,
                 "band": band,
                 "flags": " ".join(reasons),
             }

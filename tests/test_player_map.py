@@ -9,6 +9,7 @@ from fdp.matching.player_map import (
     apply_corrections,
     candidate_source,
     collisions,
+    flags,
     match_players,
     match_rate,
     read_corrections,
@@ -27,6 +28,19 @@ def test_candidate_source() -> None:
     assert candidate_source(1, {1}, {1}) == "both"
     assert candidate_source(1, {1}, set()) == "birth_date"
     assert candidate_source(1, set(), {1}) == "team_season"
+
+
+def test_flags_on_auto_matches() -> None:
+    """Every doubt on an automatic match is listed."""
+    tied = PlayerMatch(1, "name", 100.0, "token_set", "auto", tie=True, lcs_agrees=False)
+    assert flags(tied, collided=True, source="both") == ["tie", "collision", "lcs_disagrees"]
+
+
+def test_flags_rejected_with_strong_evidence() -> None:
+    """A rejected name with the same birth date AND team is listed for review."""
+    rejected = player_match(1, band="rejected")
+    assert flags(rejected, collided=False, source="both") == ["same_birth_date_and_team"]
+    assert flags(rejected, collided=False, source="birth_date") == []
 
 
 def test_collisions_ignore_duplicate_ids_of_one_person() -> None:
