@@ -11,26 +11,26 @@ import duckdb
 import httpx
 from dotenv import load_dotenv
 
+from fdp.config import load_config
 from fdp.ingest.common import DATA_DIR, connect, load_raw_json, raw_dir, save_raw
 
 SOURCE = "fdorg"
-# Competitions in scope: Serie A and Premier League (football-data.org codes).
-COMPETITIONS = ("SA", "PL")
-# Endpoint name -> (path template, extra query parameters).
-# The name is used for the raw file (SA_matches.json) and table (raw.fdorg_matches).
-ENDPOINTS: dict[str, tuple[str, dict[str, Any]]] = {
-    "matches": ("/competitions/{competition}/matches", {}),
-    "teams": ("/competitions/{competition}/teams", {}),
-    # Default limit is 10: raise it to get every player with at least one goal.
-    "scorers": ("/competitions/{competition}/scorers", {"limit": 200}),
-}
 
-BASE_URL = "https://api.football-data.org/v4"
-# Free tier allows 10 requests per minute: one request every 6 seconds stays under it.
-REQUEST_INTERVAL_SECONDS = 6.0
-# Retry policy from the brief: at most 4 attempts, waiting 10, 20, 40 seconds between them.
-MAX_ATTEMPTS = 4
-BACKOFF_BASE_SECONDS = 10.0
+# All parameters come from config/pipeline.yaml (read once, when the module is imported).
+_CONFIG = load_config()
+_SOURCE_CONFIG = _CONFIG["sources"][SOURCE]
+
+# football-data.org codes of the competitions in scope, e.g. ("SA", "PL").
+COMPETITIONS = tuple(competition[SOURCE] for competition in _CONFIG["competitions"])
+# Endpoint name -> {"path": template, "params": extra query parameters (optional)}.
+ENDPOINTS: dict[str, dict[str, Any]] = _SOURCE_CONFIG["endpoints"]
+
+BASE_URL: str = _SOURCE_CONFIG["base_url"]
+TIMEOUT_SECONDS: float = _SOURCE_CONFIG["timeout_seconds"]
+# Spread requests evenly: 10 requests per minute -> one every 6 seconds.
+REQUEST_INTERVAL_SECONDS = 60 / _SOURCE_CONFIG["requests_per_minute"]
+MAX_ATTEMPTS: int = _SOURCE_CONFIG["retry"]["max_attempts"]
+BACKOFF_BASE_SECONDS: float = _SOURCE_CONFIG["retry"]["backoff_base_seconds"]
 
 
 def season_start_year(season: str) -> int:
@@ -51,7 +51,7 @@ def season_start_year(season: str) -> int:
 
 def make_client(token: str) -> httpx.Client:
     """Create an HTTP client with the API base URL, auth header and timeout set once."""
-    return httpx.Client(base_url=BASE_URL, headers={"X-Auth-Token": token}, timeout=30.0)
+    return httpx.Client(base_url=BASE_URL, headers={"X-Auth-Token": token}, timeout=TIMEOUT_SECONDS)
 
 
 def backoff_seconds(attempt: int) -> float:
@@ -102,15 +102,16 @@ def ingest_season(
     params = {"season": season_start_year(season)}
     folder = raw_dir(SOURCE, season, data_dir)
     saved = []
-    for endpoint, (path_template, extra_params) in ENDPOINTS.items():
-        payload = get_json(
-            client, path_template.format(competition=competition), params | extra_params
-        )
+    for endpoint, spec in ENDPOINTS.items():
+        # "/competitions/{competition}/matches" -> "/competitions/SA/matches".
+        path = spec["path"].format(competition=competition)
+        # Add endpoint-specific parameters (e.g. limit for scorers), if any.
+        payload = get_json(client, path, params | spec.get("params", {}))
         # ensure_ascii=False keeps accented names readable in the raw file instead of \u escapes.
         content = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        path = save_raw(content, folder / f"{competition}_{endpoint}.json")
-        load_raw_json(con, path, f"{SOURCE}_{endpoint}", season)
-        saved.append(path)
+        file_path = save_raw(content, folder / f"{competition}_{endpoint}.json")
+        load_raw_json(con, file_path, f"{SOURCE}_{endpoint}", season)
+        saved.append(file_path)
     return saved
 
 

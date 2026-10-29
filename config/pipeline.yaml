@@ -1,0 +1,36 @@
+# Pipeline configuration: what is loaded and with which limits.
+# Secrets (API tokens) never go here: they live in .env.
+
+# Seasons in scope, as 4-digit codes. Quoted: unquoted 2627 would be read as a number.
+seasons: ["2425", "2526", "2627"]
+# Season in progress, refreshed weekly.
+current_season: "2627"
+
+# One entry per competition, with its code in each source.
+competitions:
+  - name: Serie A
+    fdorg: SA
+    couk: I1
+  - name: Premier League
+    fdorg: PL
+    couk: E0
+
+sources:
+  fdorg:
+    base_url: https://api.football-data.org/v4
+    requests_per_minute: 10 # free tier limit
+    timeout_seconds: 30
+    retry:
+      max_attempts: 4
+      backoff_base_seconds: 10 # waits 10, 20, 40 seconds
+    # Endpoint name -> path template and extra query parameters.
+    # The name is used for the raw file (SA_matches.json) and table (raw.fdorg_matches).
+    endpoints:
+      matches:
+        path: /competitions/{competition}/matches
+      teams:
+        path: /competitions/{competition}/teams
+      scorers:
+        path: /competitions/{competition}/scorers
+        params:
+          limit: 200 # default is 10: raise it to get every player with a goal
