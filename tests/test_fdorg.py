@@ -1,8 +1,11 @@
+from pathlib import Path
+
+import duckdb
 import httpx
 import pytest
 
 from fdp.ingest import fdorg
-from fdp.ingest.fdorg import backoff_seconds, get_json, season_start_year
+from fdp.ingest.fdorg import backoff_seconds, get_json, ingest_season, season_start_year
 
 
 @pytest.mark.parametrize(
@@ -69,3 +72,30 @@ def test_get_json_does_not_retry_client_errors(sleeps: list[float]) -> None:
     with pytest.raises(httpx.HTTPStatusError):
         get_json(fake_client([403]), "/matches")
     assert sleeps == [6.0]
+
+
+def test_ingest_season_saves_and_loads_every_endpoint(sleeps: list[float], tmp_path: Path) -> None:
+    """One call per endpoint: each response is saved to a raw file and loaded as one row."""
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"name": "Rúben"})
+
+    client = httpx.Client(base_url="https://test", transport=httpx.MockTransport(handler))
+    con = duckdb.connect()
+
+    saved = ingest_season(client, con, "SA", "2627", data_dir=tmp_path)
+
+    folder = tmp_path / "raw" / "fdorg" / "2627"
+    assert saved == [folder / f"SA_{name}.json" for name in ("matches", "teams", "scorers")]
+    # The API gets the start year, and scorers get the raised limit.
+    assert [str(r.url) for r in requests] == [
+        "https://test/competitions/SA/matches?season=2026",
+        "https://test/competitions/SA/teams?season=2026",
+        "https://test/competitions/SA/scorers?season=2026&limit=200",
+    ]
+    # Accents are written as UTF-8, not as \u escapes.
+    assert "Rúben" in saved[0].read_text(encoding="utf-8")
+    for table in ("fdorg_matches", "fdorg_teams", "fdorg_scorers"):
+        assert con.execute(f"SELECT count(*) FROM raw.{table}").fetchone() == (1,)

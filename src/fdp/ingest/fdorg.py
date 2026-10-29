@@ -1,9 +1,29 @@
 """Ingestion of the football-data.org API (v4) into the raw layer."""
 
+import json
+import os
+import sys
 import time
+from pathlib import Path
 from typing import Any
 
+import duckdb
 import httpx
+from dotenv import load_dotenv
+
+from fdp.ingest.common import DATA_DIR, connect, load_raw_json, raw_dir, save_raw
+
+SOURCE = "fdorg"
+# Competitions in scope: Serie A and Premier League (football-data.org codes).
+COMPETITIONS = ("SA", "PL")
+# Endpoint name -> (path template, extra query parameters).
+# The name is used for the raw file (SA_matches.json) and table (raw.fdorg_matches).
+ENDPOINTS: dict[str, tuple[str, dict[str, Any]]] = {
+    "matches": ("/competitions/{competition}/matches", {}),
+    "teams": ("/competitions/{competition}/teams", {}),
+    # Default limit is 10: raise it to get every player with at least one goal.
+    "scorers": ("/competitions/{competition}/scorers", {"limit": 200}),
+}
 
 BASE_URL = "https://api.football-data.org/v4"
 # Free tier allows 10 requests per minute: one request every 6 seconds stays under it.
@@ -63,3 +83,56 @@ def get_json(
         # attempt raises HTTPStatusError with the status code and URL.
         response.raise_for_status()
         return response.json()
+
+
+def ingest_season(
+    client: httpx.Client,
+    con: duckdb.DuckDBPyConnection,
+    competition: str,
+    season: str,
+    data_dir: Path = DATA_DIR,
+) -> list[Path]:
+    """Extract, save and load every endpoint of one competition and season.
+
+    For each endpoint: call the API, save the response to
+    data/raw/fdorg/<season>/<competition>_<endpoint>.json, then load it into
+    raw.fdorg_<endpoint>. Returns the paths of the saved files.
+    """
+    # Validate the season and convert it once, before any API call.
+    params = {"season": season_start_year(season)}
+    folder = raw_dir(SOURCE, season, data_dir)
+    saved = []
+    for endpoint, (path_template, extra_params) in ENDPOINTS.items():
+        payload = get_json(
+            client, path_template.format(competition=competition), params | extra_params
+        )
+        # ensure_ascii=False keeps accented names readable in the raw file instead of \u escapes.
+        content = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        path = save_raw(content, folder / f"{competition}_{endpoint}.json")
+        load_raw_json(con, path, f"{SOURCE}_{endpoint}", season)
+        saved.append(path)
+    return saved
+
+
+def main() -> None:
+    """Command line entry point: `uv run python -m fdp.ingest.fdorg 2627`."""
+    if len(sys.argv) != 2:
+        raise SystemExit("Usage: python -m fdp.ingest.fdorg <season>, e.g. 2627")
+    season = sys.argv[1]
+
+    # Read the token from .env; stop with a clear message instead of a KeyError.
+    load_dotenv()
+    token = os.getenv("FOOTBALL_DATA_ORG_TOKEN")
+    if not token:
+        raise SystemExit("FOOTBALL_DATA_ORG_TOKEN is missing: copy .env.example to .env and set it")
+
+    # `with` closes the HTTP client and the database even if an error occurs.
+    with make_client(token) as client, connect() as con:
+        for competition in COMPETITIONS:
+            for path in ingest_season(client, con, competition, season):
+                print(f"loaded {path}")
+
+
+# Runs only when the file is executed directly, not when it is imported (tests, Dagster).
+if __name__ == "__main__":
+    main()
