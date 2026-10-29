@@ -42,7 +42,7 @@ football-data-platform/
   data/fdp.duckdb                    # git-ignored, single database for all layers
   src/fdp/
     config.py                        # reads config/pipeline.yaml
-    ingest/{common,couk,fdorg,transfermarkt}.py
+    ingest/{common,couk,fdorg,transfermarkt}.py  # common: shared helpers (paths, checks, loads)
     matching/players.py
     definitions.py                   # Dagster wiring only
   dbt/
@@ -154,6 +154,33 @@ football-data.co.uk ingestion (`couk.py`):
   1 match. Completeness (380 per finished season) is a dbt test in phase 3.
 - Run one season by hand: `uv run python -m fdp.ingest.couk 2627` (no token needed).
 
+Transfermarkt ingestion (`transfermarkt.py`):
+
+- Public files of `dcaribou/transfermarkt-datasets`, one `.csv.gz` per table at
+  `<base_url>/<table>.csv.gz`: no credentials (Kaggle is the alternative).
+- One-off full load of 7 tables, in config order: `competitions`, `clubs`,
+  `players`, `games`, `appearances`, `player_valuations`, `transfers`.
+- Files are not split by season (each covers all seasons): saved complete and
+  untouched to `data/raw/transfermarkt/<table>.csv.gz`.
+- Loaded into `raw.transfermarkt_<table>` (one row per CSV line, all text) with
+  `CREATE OR REPLACE TABLE`, so a reload replaces the table.
+- Scope filter applied only when loading (the file stays complete):
+  - `games`: competitions in scope (`IT1`, `GB1`) and seasons in scope;
+  - `appearances`: only appearances of the loaded games;
+  - every other table is loaded in full (as the brief asks for players).
+- `_season` per row, in the project format, to join with the other sources:
+  `games` from `season` (start year 2024 -> `2425`), `appearances` from their
+  game. Empty for tables without a season (players, clubs...); valuations and
+  transfers are dated events, their season is derived in staging.
+- Arrival checks with the shared `check_csv` (reads gzip as a stream and stops
+  at `min_rows`): required key columns per table, at least 1 row.
+- Run by hand: `uv run python -m fdp.ingest.transfermarkt` (~67 MB, no arguments).
+
+Logging: every ingestion step logs a line while it runs (`requesting`,
+`downloading`, `loaded ... (N rows)`), and fdorg retries log a `WARNING`.
+`setup_logging()` is called only by the command line entry points; pytest
+and Dagster handle logs themselves.
+
 ## Phases
 
 ### Phase 0 – Skeleton
@@ -161,7 +188,8 @@ football-data.co.uk ingestion (`couk.py`):
 - [x] Dev dependencies (pytest, ruff); runtime dependencies are added in the phase that needs them
 - [x] `.env.example`, `data/raw/.gitkeep`, `docs/DEVELOPMENT.md`
 - [x] ruff and pytest configured in `pyproject.toml`, one smoke test passing
-- [ ] Credentials created: football-data.org token (done), Kaggle API key (pending), local `.env`
+- [x] Credentials: football-data.org token in `.env`. Kaggle key not needed (public
+      Transfermarkt files); Kaggle may be added at the end as an alternative source
 
 ### Phase 1 – Ingestion (raw layer)
 - [x] `config/pipeline.yaml` + `config.py`: seasons, competitions, source parameters
@@ -170,11 +198,12 @@ football-data.co.uk ingestion (`couk.py`):
 - [x] fdorg arrival checks (`check_payload`): required list, min items, truncation
 - [x] `ingest/couk.py`: full season download, `read_csv(union_by_name=true)`,
       arrival checks; loaded for all seasons (2425/2526: 380 per league; 2627: I1 88, E0 80)
-- [ ] Transfermarkt arrival checks (with its ingestion)
 - [x] `ingest/fdorg.py`: matches/teams/scorers, 10 req/min, retry on 429/5xx,
       raw JSON saved, full season refresh (see decision log)
 - [x] fdorg loaded for all seasons: 6 rows per raw table (SA, PL x 2425, 2526, 2627)
-- [ ] `ingest/transfermarkt.py`: one-off full load of 7 tables, filtered to scope
+- [x] `ingest/transfermarkt.py`: one-off full load of 7 tables, games and appearances
+      filtered to scope, arrival checks (games 1520, appearances 46873)
+- [x] Progress logging in all ingestion modules
 - [ ] Dagster ingestion assets partitioned by season
 - [ ] Each source: real sample inspected before coding, findings written below
 
@@ -260,7 +289,21 @@ football-data.co.uk ingestion (`couk.py`):
   - `player.position` can be null; `section` (e.g. `Offence`) is filled instead.
 
 ### Transfermarkt
-- _todo_
+- Checked on 2026-10-29 from the public files (last modified 2026-09-05).
+  The README confirms updates are paused: `games` up to 2026-07-06,
+  `appearances` up to 2026-06-28, `player_valuations` up to 2026-06-12,
+  no 2026/27 squads.
+- Tables (rows, columns): competitions 65/11, clubs 796/17, players 50149/26,
+  games 88958/23, appearances 1894350/13, player_valuations 656301/6,
+  transfers 175165/10.
+- Competition codes: Serie A `IT1`, Premier League `GB1`.
+- `games.season` is the start year (2024 = 2024/25), like fdorg.
+- In scope: 380 games per league in 2024/25 and 2025/26 (1520), 46873
+  appearances (~11500 per league and season). No 2026/27 games.
+- `players.date_of_birth` is missing for only 0.1% of players: good for matching.
+- `transfers.transfer_date` goes up to 2030: future (announced) transfers,
+  to handle in staging.
+- Files are gzip, every value quoted, no BOM.
 
 ## Open questions
 
@@ -293,11 +336,18 @@ football-data.co.uk ingestion (`couk.py`):
 | 2026-10-29 | xG kept as in the source (2026/27 only), no model change | Brief lists xG for couk, but past seasons lack it: documented as a limitation |
 | 2026-10-29 | couk CSVs: table rebuilt from all raw files, not inserted file by file | Columns change by season; `union_by_name` handles it only when reading all files together |
 | 2026-10-29 | couk arrival check: at least 1 row, not 380 | Current season holds played matches only; completeness is a dbt test |
+| 2026-10-29 | Transfermarkt from the public dataset files, not Kaggle | No credentials: a recruiter can clone and run; same download code as couk. Kaggle kept as a possible alternative |
+| 2026-10-29 | Transfermarkt files not split by season; `_season` as a column on games and appearances | Each file covers all seasons: splitting would alter the raw copy. The column gives the same `2425` key as the other sources |
+| 2026-10-29 | Scope filter applied at load time, raw files kept complete | Adding a competition later only needs a reload, no new download |
+| 2026-10-29 | `check_csv` and `season_start_year` moved to `common.py` | Used by more than one source |
+| 2026-10-29 | Logging with the standard `logging` module, one logger per module | Long downloads looked stuck without progress messages |
 | 2026-10-29 | Dagster wired after all three sources are ingested | Set it up once, knowing every source; logic stays in tested functions |
 
 ## Known limitations
 
 - Transfermarkt data stops on 2026-07-06: no appearances for 2026/27.
+- Transfermarkt files come from the dataset author's public bucket: the URL may
+  change; the Kaggle dataset `davidcariboo/player-scores` is the fallback.
 - xG (`HxG` / `AxG`) from football-data.co.uk only exists for 2026/27:
   past seasons have no xG. The columns are also undocumented in `notes.txt`.
 - Serie A referees are not in football-data.co.uk: taken from football-data.org.
