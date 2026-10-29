@@ -60,10 +60,13 @@ def test_get_json_returns_payload(sleeps: list[float]) -> None:
     assert sleeps == [6.0]
 
 
-def test_get_json_retries_on_rate_limit(sleeps: list[float]) -> None:
-    """A 429 is retried after a backoff wait, then the payload is returned."""
+def test_get_json_retries_on_rate_limit(
+    sleeps: list[float], caplog: pytest.LogCaptureFixture
+) -> None:
+    """A 429 is retried after a backoff wait (and logged), then the payload is returned."""
     assert get_json(fake_client([429, 200]), "/matches") == {"status": 200}
     assert sleeps == [6.0, 10.0, 6.0]
+    assert "/matches returned 429, retrying in 10s (attempt 1/4)" in caplog.text
 
 
 def test_get_json_gives_up_after_max_attempts(sleeps: list[float]) -> None:

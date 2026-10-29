@@ -1,5 +1,9 @@
 """Helpers shared by all ingestion pipelines."""
 
+import csv
+import gzip
+import io
+import logging
 from pathlib import Path
 
 import duckdb
@@ -8,6 +12,36 @@ import duckdb
 DATA_DIR = Path("data")
 # Single DuckDB file for all layers (raw, staging, core, marts); git-ignored.
 DB_PATH = DATA_DIR / "fdp.duckdb"
+
+
+def setup_logging() -> None:
+    """Show INFO messages with time and module, for command line runs.
+
+    Called only by the `main()` entry points: when the code runs under pytest or
+    Dagster, they configure logging themselves.
+    """
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+
+def season_start_year(season: str) -> int:
+    """Convert a project season code into its start year: "2627" -> 2026.
+
+    The project identifies seasons as "2627"; football-data.org and Transfermarkt
+    use the start year (2026).
+    Raises ValueError on malformed codes, so a typo fails before any API call.
+    """
+    # Exactly 4 digits: rejects "26-27", "262", " 2627".
+    if len(season) != 4 or not season.isdigit():
+        raise ValueError(f"Season must be 4 digits like '2627', got {season!r}")
+    # The two halves must be consecutive years: rejects calendar years like "2026".
+    start, end = int(season[:2]), int(season[2:])
+    if end != start + 1:
+        raise ValueError(f"Season years must be consecutive like '2627', got {season!r}")
+    return 2000 + start
 
 
 def raw_dir(source: str, season: str, data_dir: Path = DATA_DIR) -> Path:
@@ -31,6 +65,40 @@ def save_raw(content: bytes, path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(content)
     return path
+
+
+def check_csv(content: bytes, required_columns: list[str], min_rows: int, label: str) -> None:
+    """Arrival checks on a downloaded CSV (plain or gzip), before it is saved or loaded.
+
+    Raises ValueError if a required column is missing or there are fewer than
+    `min_rows` data rows. `label` (e.g. "I1 2627", "games") says which file failed.
+    Rows are read as a stream and reading stops once `min_rows` is reached, so a
+    large file (1.9M appearances) is checked without loading it all in memory.
+    """
+    # Gzip files start with the bytes 1f 8b: decompress them on the fly.
+    binary = io.BytesIO(content)
+    if content[:2] == b"\x1f\x8b":
+        binary = gzip.GzipFile(fileobj=binary)
+    # "utf-8-sig" drops a BOM, so the first column reads "Div" and not "\ufeffDiv".
+    reader = csv.reader(io.TextIOWrapper(binary, encoding="utf-8-sig", newline=""))
+
+    header = next(reader, None)
+    if header is None:
+        raise ValueError(f"{label}: empty file")
+
+    # Required columns: without them the file cannot be used downstream.
+    missing = [column for column in required_columns if column not in header]
+    if missing:
+        raise ValueError(f"{label}: missing columns {missing}")
+
+    # Minimum rows: lines made only of commas are padding, not data.
+    rows = 0
+    for line in reader:
+        if any(line):
+            rows += 1
+            if rows >= min_rows:
+                return
+    raise ValueError(f"{label}: expected at least {min_rows} rows, got {rows}")
 
 
 def connect(db_path: Path = DB_PATH) -> duckdb.DuckDBPyConnection:

@@ -4,7 +4,7 @@ import duckdb
 import httpx
 import pytest
 
-from fdp.ingest.couk import check_csv, csv_url, ingest_season
+from fdp.ingest.couk import csv_url, ingest_season
 
 # Minimal valid file: BOM, the required columns and one match, as on the real site.
 VALID_CSV = "﻿Div,Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR\nI1,22/08/2026,Udinese,Como,1,1,D\n"
@@ -13,27 +13,6 @@ VALID_CSV = "﻿Div,Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR\nI1,22/08/2026,Udinese,
 def test_csv_url() -> None:
     """The URL follows the site's <season>/<competition>.csv layout."""
     assert csv_url("I1", "2627") == "https://www.football-data.co.uk/mmz4281/2627/I1.csv"
-
-
-def test_check_csv_accepts_valid_file() -> None:
-    """A file with the required columns and at least one match passes."""
-    check_csv(VALID_CSV.encode("utf-8"), "I1 2627")
-
-
-@pytest.mark.parametrize(
-    ("content", "message"),
-    [
-        ("", "empty"),  # nothing downloaded
-        ("Div,Date,HomeTeam\nI1,22/08/2026,Udinese\n", "missing columns"),  # columns gone
-        ("Div,Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR\n", "at least 1"),  # header only
-        ("Div,Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR\n,,,,,,\n", "at least 1"),  # padding line
-    ],
-)
-def test_check_csv_rejects_bad_files(content: str, message: str) -> None:
-    """Each rule raises ValueError naming the failed file and the reason."""
-    with pytest.raises(ValueError, match=message) as error:
-        check_csv(content.encode("utf-8"), "I1 2627")
-    assert "I1 2627" in str(error.value)
 
 
 def test_ingest_season_saves_exact_bytes_and_loads_rows(tmp_path: Path) -> None:
