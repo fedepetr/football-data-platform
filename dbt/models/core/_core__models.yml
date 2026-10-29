@@ -81,3 +81,265 @@ models:
           - accepted_values:
               arguments:
                 values: ["damerau_levenshtein", "token_set", "manual", "unmatched"]
+
+  - name: dim_competition
+    description: Competitions in scope with their code in each source.
+    columns:
+      - name: competition_key
+        data_tests: [unique, not_null]
+
+  - name: dim_season
+    description: Seasons loaded, with first and last fixture date and the season in progress.
+    columns:
+      - name: season_key
+        description: Project season code, e.g. 2425.
+        data_tests: [unique, not_null]
+      - name: is_current
+        description: True for the latest season that has already started.
+
+  - name: dim_player
+    description: >
+      Players in scope: football-data.org players (matched or not) and
+      Transfermarkt players with appearances in the games in scope. Attributes from
+      Transfermarkt when available, otherwise from football-data.org.
+    columns:
+      - name: player_key
+        description: tm_<Transfermarkt id> or fdorg_<football-data.org id> (see map_player).
+        data_tests: [unique, not_null]
+      - name: full_name
+        data_tests: [not_null]
+      - name: position
+        description: Goalkeeper, Defender, Midfield or Attack; NULL when unknown in the source.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["Goalkeeper", "Defender", "Midfield", "Attack"]
+      - name: attributes_source
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["transfermarkt", "fdorg"]
+
+  - name: fct_match
+    description: >
+      One row per match (every football-data.org fixture, future ones included),
+      combining the three sources. Scores only for finished matches; xG only from 2026/27;
+      attendance and stadium only where Transfermarkt has the game.
+    columns:
+      - name: match_key
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('map_match')
+                field: match_key
+      - name: competition_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_competition')
+                field: competition_key
+      - name: season_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_season')
+                field: season_key
+      - name: home_team_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_team')
+                field: team_key
+      - name: away_team_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_team')
+                field: team_key
+      - name: result
+        description: H (home win), D (draw), A (away win); NULL if not played yet.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["H", "D", "A"]
+
+  - name: fct_team_match_stats
+    description: >
+      One row per played match and team (two per match) with football-data.co.uk
+      statistics from the team's point of view; xG only from 2026/27.
+    data_tests:
+      # Exactly one row per match and team.
+      - unique:
+          arguments:
+            column_name: "match_key || '_' || team_key"
+      # One home and one away row per match.
+      - unique:
+          arguments:
+            column_name: "match_key || '_' || is_home"
+    columns:
+      - name: match_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fct_match')
+                field: match_key
+      - name: team_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_team')
+                field: team_key
+      - name: season_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_season')
+                field: season_key
+      - name: result
+        description: W (win), D (draw), L (loss) for the team.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["W", "D", "L"]
+
+  - name: fct_player_appearance
+    description: >
+      One row per player and match from Transfermarkt (2024/25 and 2025/26 only:
+      the dataset stops in July 2026), with minutes, goals, assists and cards.
+    data_tests:
+      # A player appears once per match.
+      - unique:
+          arguments:
+            column_name: "match_key || '_' || player_key"
+    columns:
+      - name: appearance_key
+        data_tests: [unique, not_null]
+      - name: player_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_player')
+                field: player_key
+      - name: match_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fct_match')
+                field: match_key
+      - name: team_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_team')
+                field: team_key
+      - name: minutes_played
+        data_tests: [not_null]
+
+  - name: fct_player_valuation
+    description: >
+      Market value history (Transfermarkt) of the players in scope, all dates.
+      team_key is set only when the club is one of the project teams.
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "player_key || '_' || valuation_date"
+    columns:
+      - name: player_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_player')
+                field: player_key
+      - name: valuation_date
+        data_tests: [not_null]
+      - name: market_value_eur
+        data_tests: [not_null]
+      - name: team_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_team')
+                field: team_key
+
+  - name: fct_transfer
+    description: >
+      Transfers that already happened (Transfermarkt) of the players in scope, all
+      dates. from/to team_key set only when the club is one of the project teams.
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "concat_ws('_', player_key, transfer_date, from_tm_club_id, to_tm_club_id)"
+    columns:
+      - name: player_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_player')
+                field: player_key
+      - name: transfer_date
+        data_tests: [not_null]
+      - name: from_team_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_team')
+                field: team_key
+      - name: to_team_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_team')
+                field: team_key
+      - name: transfer_fee_eur
+        description: 0 means either a free transfer or an unknown fee.
+
+  - name: fct_player_season_scoring
+    description: >
+      Goals and assists per player, competition and season from football-data.org
+      (players with at least one goal; the only scoring source for 2026/27).
+      Missing assists and penalties are read as 0 (assists_reported tells which).
+      Assist counts differ between sources (69% agreement with Transfermarkt).
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "player_key || '_' || competition_key || '_' || season_key"
+    columns:
+      - name: player_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_player')
+                field: player_key
+      - name: season_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_season')
+                field: season_key
+      - name: team_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_team')
+                field: team_key
+      - name: goals
+        data_tests: [not_null]
+      - name: assists
+        description: Assists; 0 when the source gives none (see assists_reported).
+        data_tests: [not_null]
+      - name: assists_reported
+        description: True if football-data.org gave the number, false if 0 was inferred.
