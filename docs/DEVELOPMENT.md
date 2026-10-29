@@ -100,7 +100,37 @@ Folders are created when the phase that needs them starts, not before.
 - No `Referee` column in I1 2026/27. To check: E0 and past I1 seasons.
 
 ### football-data.org
-- _todo_
+- Free tier (checked 2026-10-29 on the pricing, coverage and policies pages):
+  - 12 competitions, Serie A (`SA`) and Premier League (`PL`) included.
+  - 10 requests per minute.
+  - Scores and schedules are delayed (no live scores).
+  - Not included: line-ups, substitutions, in-match goal scorers, bookings, squads.
+- Token verified: `GET /v4/competitions/SA` returns 200.
+- Real responses checked on 2026-10-29 (samples in `data/samples/fdorg/`, git-ignored).
+  The free tier gives more than the pricing page says.
+- `/competitions/SA/matches?season=<start year>` (`season=2026` means 2026/27):
+  - Past seasons are available: 2024 returns 380 matches, all `FINISHED`.
+  - The current season returns the full fixture list: 380 matches
+    (88 `FINISHED`, 102 `TIMED`, 190 `SCHEDULED`). The 88 finished matches
+    match the 88 rows of the couk I1 CSV.
+  - Kickoff in `utcDate` (UTC, e.g. `2026-08-22T16:30:00Z`).
+  - `referees` is filled: covers the missing `Referee` column in couk I1.
+  - `odds` only holds a message: not in the free tier.
+  - `season.startDate` (2026-08-23) is after the first match (2026-08-22):
+    use match dates, not the declared season start.
+- `/competitions/SA/teams?season=<year>`:
+  - Squads are included, despite the pricing page. Players have `id`, `name`,
+    `position`, `dateOfBirth`, `nationality`.
+  - Past seasons return the teams of that season (2024 includes Empoli, Monza,
+    Venezia) and different, larger squads (all players who were in the roster).
+  - `coach` is the current one even for past seasons: do not use it historically.
+- `/competitions/SA/scorers?season=<year>`:
+  - Default `limit` is 10. With `limit=200` the 2026 response returns 144 players,
+    i.e. every player with at least one goal.
+  - `assists` is null for 81/144 players and `penalties` for 134/144:
+    most likely null means 0, to confirm in staging.
+  - `player.firstName` is empty and `lastName` holds the full name: use `name`.
+  - `player.position` can be null; `section` (e.g. `Offence`) is filled instead.
 
 ### Transfermarkt
 - _todo_
@@ -109,11 +139,15 @@ Folders are created when the phase that needs them starts, not before.
 
 | Question | Status |
 | --- | --- |
-| Is birth date available on the football-data.org person resource? | open |
+| Is birth date available on the football-data.org person resource? | yes: `dateOfBirth` in squads and scorers |
 | Can matches be joined by date only (fdorg UTC vs couk local time)? | open |
 | Manual team-name map for couk as dbt seed | open |
 | Meaning of `HxG` / `AxG` | undocumented, loaded as-is |
-| `Referee` missing in I1: only Serie A or all leagues? | open |
+| `Referee` missing in I1: only Serie A or all leagues? | open (fdorg `referees` can cover it) |
+| Does the fdorg free tier give access to past seasons (2024, 2025)? | yes for 2024; 2025 to confirm in the first run |
+| Does fdorg `/teams` return squads on the free tier? | yes |
+| Is fdorg `/scorers` available on the free tier? | yes, with `limit` raised above the default 10 |
+| Does fdorg `assists: null` mean 0? | open |
 
 ## Decision log
 
