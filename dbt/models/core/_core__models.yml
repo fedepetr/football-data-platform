@@ -209,3 +209,39 @@ models:
           - accepted_values:
               arguments:
                 values: ["W", "D", "L"]
+
+  - name: fct_player_appearance
+    description: >
+      One row per player and match from Transfermarkt (2024/25 and 2025/26 only:
+      the dataset stops in July 2026), with minutes, goals, assists and cards.
+    data_tests:
+      # A player appears once per match.
+      - unique:
+          arguments:
+            column_name: "match_key || '_' || player_key"
+    columns:
+      - name: appearance_key
+        data_tests: [unique, not_null]
+      - name: player_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_player')
+                field: player_key
+      - name: match_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fct_match')
+                field: match_key
+      - name: team_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_team')
+                field: team_key
+      - name: minutes_played
+        data_tests: [not_null]
