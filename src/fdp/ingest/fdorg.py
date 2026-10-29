@@ -1,6 +1,7 @@
 """Ingestion of the football-data.org API (v4) into the raw layer."""
 
 import json
+import logging
 import os
 import sys
 import time
@@ -12,9 +13,19 @@ import httpx
 from dotenv import load_dotenv
 
 from fdp.config import load_config
-from fdp.ingest.common import DATA_DIR, connect, load_raw_json, raw_dir, save_raw
+from fdp.ingest.common import (
+    DATA_DIR,
+    connect,
+    load_raw_json,
+    raw_dir,
+    save_raw,
+    season_start_year,
+    setup_logging,
+)
 
 SOURCE = "fdorg"
+# One logger per module: messages show where they come from (fdp.ingest.fdorg).
+logger = logging.getLogger(__name__)
 
 # All parameters come from config/pipeline.yaml (read once, when the module is imported).
 _CONFIG = load_config()
@@ -32,22 +43,6 @@ TIMEOUT_SECONDS: float = _SOURCE_CONFIG["timeout_seconds"]
 REQUEST_INTERVAL_SECONDS = 60 / _SOURCE_CONFIG["requests_per_minute"]
 MAX_ATTEMPTS: int = _SOURCE_CONFIG["retry"]["max_attempts"]
 BACKOFF_BASE_SECONDS: float = _SOURCE_CONFIG["retry"]["backoff_base_seconds"]
-
-
-def season_start_year(season: str) -> int:
-    """Convert a project season code into the year expected by the API.
-
-    The project identifies seasons as "2627"; the API wants the start year (2026).
-    Raises ValueError on malformed codes, so a typo fails before any API call.
-    """
-    # Exactly 4 digits: rejects "26-27", "262", " 2627".
-    if len(season) != 4 or not season.isdigit():
-        raise ValueError(f"Season must be 4 digits like '2627', got {season!r}")
-    # The two halves must be consecutive years: rejects calendar years like "2026".
-    start, end = int(season[:2]), int(season[2:])
-    if end != start + 1:
-        raise ValueError(f"Season years must be consecutive like '2627', got {season!r}")
-    return 2000 + start
 
 
 def make_client(token: str) -> httpx.Client:
@@ -77,7 +72,16 @@ def get_json(
         # Temporary errors are worth retrying, as long as attempts are left.
         retryable = response.status_code == 429 or response.status_code >= 500
         if retryable and attempt < MAX_ATTEMPTS:
-            time.sleep(backoff_seconds(attempt))
+            wait = backoff_seconds(attempt)
+            logger.warning(
+                "%s returned %s, retrying in %.0fs (attempt %d/%d)",
+                path,
+                response.status_code,
+                wait,
+                attempt,
+                MAX_ATTEMPTS,
+            )
+            time.sleep(wait)
             continue
 
         # Success returns the body; a non-retryable error or the last failed
@@ -135,12 +139,15 @@ def ingest_season(
         # "/competitions/{competition}/matches" -> "/competitions/SA/matches".
         path = spec["path"].format(competition=competition)
         # Add endpoint-specific parameters (e.g. limit for scorers), if any.
+        logger.info("requesting %s %s %s", competition, endpoint, season)
         payload = get_json(client, path, params | spec.get("params", {}))
         check_payload(payload, spec, f"{competition} {endpoint} {season}")
         # ensure_ascii=False keeps accented names readable in the raw file instead of \u escapes.
         content = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         file_path = save_raw(content, folder / f"{competition}_{endpoint}.json")
         load_raw_json(con, file_path, f"{SOURCE}_{endpoint}", season)
+        items = len(payload[spec["items_key"]])
+        logger.info("loaded %s into raw.%s_%s (%d items)", file_path, SOURCE, endpoint, items)
         saved.append(file_path)
     return saved
 
@@ -150,6 +157,7 @@ def main() -> None:
     if len(sys.argv) != 2:
         raise SystemExit("Usage: python -m fdp.ingest.fdorg <season>, e.g. 2627")
     season = sys.argv[1]
+    setup_logging()
 
     # Read the token from .env; stop with a clear message instead of a KeyError.
     load_dotenv()
@@ -160,8 +168,7 @@ def main() -> None:
     # `with` closes the HTTP client and the database even if an error occurs.
     with make_client(token) as client, connect() as con:
         for competition in COMPETITIONS:
-            for path in ingest_season(client, con, competition, season):
-                print(f"loaded {path}")
+            ingest_season(client, con, competition, season)
 
 
 # Runs only when the file is executed directly, not when it is imported (tests, Dagster).

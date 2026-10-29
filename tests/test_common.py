@@ -1,9 +1,17 @@
+import gzip
 from pathlib import Path
 
 import duckdb
 import pytest
 
-from fdp.ingest.common import load_raw_json, raw_dir, rebuild_raw_csv_table, save_raw
+from fdp.ingest.common import (
+    check_csv,
+    load_raw_json,
+    raw_dir,
+    rebuild_raw_csv_table,
+    save_raw,
+    season_start_year,
+)
 
 
 def test_raw_dir_default_data_folder() -> None:
@@ -143,3 +151,39 @@ def test_rebuild_raw_csv_table_reflects_files_on_disk(
 
     rows = con.execute("SELECT FTHG, _source_file FROM raw.couk_matches ORDER BY 1").fetchall()
     assert rows == [("1", str(path)), ("3", str(path))]
+
+
+def test_season_start_year() -> None:
+    """A season code is converted to its start year (full cases in test_fdorg.py)."""
+    assert season_start_year("2627") == 2026
+
+
+# Arrival check settings used below: like football-data.co.uk.
+COLUMNS = ["Div", "HomeTeam"]
+CSV_WITH_BOM = "\ufeffDiv,HomeTeam\nI1,Udinese\n"
+
+
+def test_check_csv_accepts_valid_file() -> None:
+    """A file with the required columns and enough rows passes, BOM included."""
+    check_csv(CSV_WITH_BOM.encode("utf-8"), COLUMNS, 1, "I1 2627")
+
+
+def test_check_csv_reads_gzip_files() -> None:
+    """Compressed files (Transfermarkt .csv.gz) are checked like plain ones."""
+    check_csv(gzip.compress(b"Div,HomeTeam\nI1,Udinese\n"), COLUMNS, 1, "games")
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        ("", "empty"),  # nothing downloaded
+        ("Div\nI1\n", "missing columns"),  # a required column is gone
+        ("Div,HomeTeam\n", "at least 1"),  # header only
+        ("Div,HomeTeam\n,\n", "at least 1"),  # padding line, not data
+    ],
+)
+def test_check_csv_rejects_bad_files(content: str, message: str) -> None:
+    """Each rule raises ValueError naming the failed file and the reason."""
+    with pytest.raises(ValueError, match=message) as error:
+        check_csv(content.encode("utf-8"), COLUMNS, 1, "I1 2627")
+    assert "I1 2627" in str(error.value)
