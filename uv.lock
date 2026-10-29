@@ -586,6 +586,7 @@ dependencies = [
     { name = "httpx" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
+    { name = "rapidfuzz" },
     { name = "unidecode" },
 ]
 
@@ -605,6 +606,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "python-dotenv", specifier = ">=1.2.4" },
     { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "rapidfuzz", specifier = ">=3.14.6" },
     { name = "unidecode", specifier = ">=1.4.0" },
 ]
 
