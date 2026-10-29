@@ -1,0 +1,33 @@
+models:
+  - name: stg_couk__matches
+    description: >
+      One row per match from football-data.co.uk (Serie A I1, Premier League E0),
+      typed and renamed. Current season holds played matches only.
+    columns:
+      - name: couk_match_ref
+        description: Built key competition_date_home_away, e.g. I1_2026-08-22_Udinese_Como.
+        data_tests:
+          - unique
+          - not_null
+      - name: match_date
+        data_tests:
+          - not_null
+      - name: home_team_name
+        description: Short team name used by this source (e.g. Inter), mapped to dim_team via a seed.
+        data_tests:
+          - not_null
+      - name: away_team_name
+        data_tests:
+          - not_null
+      - name: result
+        description: Full time result, H (home win), D (draw), A (away win).
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["H", "D", "A"]
+      - name: kickoff_time_uk
+        description: Kick-off time in UK local time.
+      - name: home_xg
+        description: Home expected goals; only available from 2026/27, undocumented by the source.
+      - name: referee
+        description: Referee name; only available for the Premier League.
