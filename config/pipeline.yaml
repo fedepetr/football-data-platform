@@ -23,14 +23,22 @@ sources:
     retry:
       max_attempts: 4
       backoff_base_seconds: 10 # waits 10, 20, 40 seconds
-    # Endpoint name -> path template and extra query parameters.
+    # Endpoint name -> path template, arrival checks and extra query parameters.
     # The name is used for the raw file (SA_matches.json) and table (raw.fdorg_matches).
+    # Arrival checks: the response must contain the list `items_key`
+    # with at least `min_items` elements (and fewer than `limit`, if set).
     endpoints:
       matches:
         path: /competitions/{competition}/matches
+        items_key: matches
+        min_items: 380 # 20-team league: full fixture list, even mid-season
       teams:
         path: /competitions/{competition}/teams
+        items_key: teams
+        min_items: 20
       scorers:
         path: /competitions/{competition}/scorers
+        items_key: scorers
+        min_items: 1 # varies during the season; empty means a problem
         params:
           limit: 1000 # default is 10: raise it to get every player with a goal

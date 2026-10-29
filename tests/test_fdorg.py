@@ -5,7 +5,13 @@ import httpx
 import pytest
 
 from fdp.ingest import fdorg
-from fdp.ingest.fdorg import backoff_seconds, get_json, ingest_season, season_start_year
+from fdp.ingest.fdorg import (
+    backoff_seconds,
+    check_payload,
+    get_json,
+    ingest_season,
+    season_start_year,
+)
 
 
 @pytest.mark.parametrize(
@@ -80,7 +86,10 @@ def test_ingest_season_saves_and_loads_every_endpoint(sleeps: list[float], tmp_p
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
-        return httpx.Response(200, json={"name": "Rúben"})
+        # Answer with a payload that passes the arrival checks of the endpoint.
+        endpoint = request.url.path.rsplit("/", 1)[-1]
+        items = [{"name": "Rúben"}] * fdorg.ENDPOINTS[endpoint]["min_items"]
+        return httpx.Response(200, json={endpoint: items})
 
     client = httpx.Client(base_url="https://test", transport=httpx.MockTransport(handler))
     con = duckdb.connect()
@@ -100,3 +109,43 @@ def test_ingest_season_saves_and_loads_every_endpoint(sleeps: list[float], tmp_p
     assert "Rúben" in saved[0].read_text(encoding="utf-8")
     for table in ("fdorg_matches", "fdorg_teams", "fdorg_scorers"):
         assert con.execute(f"SELECT count(*) FROM raw.{table}").fetchone() == (1,)
+
+
+# Arrival check spec used below: like the scorers endpoint, with a small limit.
+SPEC = {"items_key": "scorers", "min_items": 2, "params": {"limit": 5}}
+
+
+def test_check_payload_accepts_valid_response() -> None:
+    """A list between min_items and the limit passes without errors."""
+    check_payload({"scorers": [1, 2, 3]}, SPEC, "SA scorers 2627")
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        ({"message": "error"}, "missing"),  # API answered something else
+        ({"scorers": None}, "missing"),  # key present but not a list
+        ({"scorers": [1]}, "at least 2"),  # fewer rows than min_items
+        ({"scorers": [1, 2, 3, 4, 5]}, "truncated"),  # count equal to the limit
+    ],
+)
+def test_check_payload_rejects_bad_responses(payload: dict, message: str) -> None:
+    """Each rule raises ValueError naming the failed file and the reason."""
+    with pytest.raises(ValueError, match=message) as error:
+        check_payload(payload, SPEC, "SA scorers 2627")
+    assert "SA scorers 2627" in str(error.value)
+
+
+def test_ingest_season_failed_check_keeps_previous_data(
+    sleeps: list[float], tmp_path: Path
+) -> None:
+    """An empty response stops the run before saving: no file written, no table touched."""
+    client = fake_client([200])  # answers {"status": 200}: no "matches" list
+    con = duckdb.connect()
+
+    with pytest.raises(ValueError, match="matches"):
+        ingest_season(client, con, "SA", "2627", data_dir=tmp_path)
+
+    assert not (tmp_path / "raw").exists()
+    tables = con.execute("SELECT count(*) FROM information_schema.tables").fetchone()
+    assert tables == (0,)

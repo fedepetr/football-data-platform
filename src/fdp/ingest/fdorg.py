@@ -22,7 +22,8 @@ _SOURCE_CONFIG = _CONFIG["sources"][SOURCE]
 
 # football-data.org codes of the competitions in scope, e.g. ("SA", "PL").
 COMPETITIONS = tuple(competition[SOURCE] for competition in _CONFIG["competitions"])
-# Endpoint name -> {"path": template, "params": extra query parameters (optional)}.
+# Endpoint name -> {"path": template, "items_key" and "min_items": arrival checks,
+# "params": extra query parameters (optional)}.
 ENDPOINTS: dict[str, dict[str, Any]] = _SOURCE_CONFIG["endpoints"]
 
 BASE_URL: str = _SOURCE_CONFIG["base_url"]
@@ -85,6 +86,33 @@ def get_json(
         return response.json()
 
 
+def check_payload(payload: dict[str, Any], spec: dict[str, Any], label: str) -> None:
+    """Arrival checks on one API response, before it is saved or loaded.
+
+    Raises ValueError if the expected list is missing, has fewer items than
+    `min_items`, or has as many items as the requested `limit` (truncated data).
+    `label` (e.g. "SA scorers 2425") makes the error say which file failed.
+    """
+    items_key = spec["items_key"]
+    # Required structure: the list we load must be there (e.g. "matches").
+    items = payload.get(items_key)
+    if not isinstance(items, list):
+        raise ValueError(f"{label}: key {items_key!r} missing or not a list")
+
+    # Minimum rows: an empty or partial response must not replace good data.
+    count = len(items)
+    if count < spec["min_items"]:
+        raise ValueError(f"{label}: expected at least {spec['min_items']} items, got {count}")
+
+    # Truncation: getting exactly `limit` items means the API probably stopped there.
+    limit = spec.get("params", {}).get("limit")
+    if limit is not None and count >= limit:
+        raise ValueError(
+            f"{label}: got {count} items = limit {limit}, data probably truncated; "
+            "raise the limit in config/pipeline.yaml"
+        )
+
+
 def ingest_season(
     client: httpx.Client,
     con: duckdb.DuckDBPyConnection,
@@ -94,9 +122,10 @@ def ingest_season(
 ) -> list[Path]:
     """Extract, save and load every endpoint of one competition and season.
 
-    For each endpoint: call the API, save the response to
+    For each endpoint: call the API, run the arrival checks, save the response to
     data/raw/fdorg/<season>/<competition>_<endpoint>.json, then load it into
     raw.fdorg_<endpoint>. Returns the paths of the saved files.
+    A failed check stops before saving, so the previous good file and rows stay.
     """
     # Validate the season and convert it once, before any API call.
     params = {"season": season_start_year(season)}
@@ -107,6 +136,7 @@ def ingest_season(
         path = spec["path"].format(competition=competition)
         # Add endpoint-specific parameters (e.g. limit for scorers), if any.
         payload = get_json(client, path, params | spec.get("params", {}))
+        check_payload(payload, spec, f"{competition} {endpoint} {season}")
         # ensure_ascii=False keeps accented names readable in the raw file instead of \u escapes.
         content = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         file_path = save_raw(content, folder / f"{competition}_{endpoint}.json")
