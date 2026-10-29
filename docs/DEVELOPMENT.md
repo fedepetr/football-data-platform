@@ -10,7 +10,7 @@ Updated at the end of every phase.
 | --- | --- | --- |
 | 0 | Project skeleton, tooling, conventions | done |
 | 1 | Ingestion of the three sources into `raw` | done (PR pending) |
-| 2 | dbt staging and core, player reconciliation | todo |
+| 2 | dbt staging and core, player reconciliation | in progress (staging done) |
 | 3 | Marts, data quality tests, Dagster schedule, CI | todo |
 | 4 | README, architecture diagram, demo | todo |
 
@@ -46,8 +46,10 @@ football-data-platform/
     matching/players.py
     definitions.py                   # Dagster wiring only
   dbt/
-    dbt_project.yml / profiles.yml
+    dbt_project.yml / profiles.yml   # profile points to ../data/fdp.duckdb
+    macros/generate_schema_name.sql  # schemas named staging, core, marts
     seeds/ models/{staging,core,marts}/
+    models/staging/<source>/         # _<source>__sources.yml, _<source>__models.yml, stg_*.sql
   tests/
   .github/workflows/
 ```
@@ -205,6 +207,48 @@ stays in `ingest/`. Start the UI with `uv run dagster dev` (http://127.0.0.1:300
   - Do not run other scripts on `data/fdp.duckdb` while Dagster writes to it.
 - Run one partition from the command line:
   `uv run dagster asset materialize -m fdp.definitions --select raw/couk_matches --partition 2627`
+- dbt models are assets too (`@dbt_assets`, keys `staging/<model>`), and every
+  dbt test is an asset check (48 on staging). Each dbt source `raw.<table>` is
+  linked to the raw asset with the same key, so the lineage is raw -> staging.
+- `DBT_PROJECT.prepare_if_dev()` runs `dbt parse` when `dagster dev` starts, so
+  Dagster reads an up-to-date manifest. On a fresh clone, run
+  `uv run --directory dbt dbt parse` before `pytest` (the tests load the manifest).
+
+## Transformation (dbt)
+
+dbt (`dbt-core` 1.12 + `dbt-duckdb`) turns raw tables into typed, renamed models.
+Run it from the `dbt/` folder: `uv run --directory dbt dbt build` (models and
+tests in dependency order); `--select <model>` or `--select staging.fdorg` to
+run a part. Python ingestion writes `raw.*`; dbt only reads it through
+`source('raw', ...)`: the tables are the contract between the two.
+
+Conventions:
+
+- One DuckDB schema per layer: `raw` (Python), `staging` (views), `core` and
+  `marts` (tables), `seeds`. The `generate_schema_name` macro keeps the names
+  plain instead of dbt's default `main_staging`.
+- Staging models are named `stg_<source>__<entity>`, one folder per source with
+  `_<source>__sources.yml` (raw tables) and `_<source>__models.yml` (docs, tests).
+- Source ids keep a source prefix: `fdorg_match_id`, `tm_player_id`,
+  `couk_match_ref`, so the origin of an id is clear once sources are combined.
+- `profiles.yml` uses `../data/fdp.duckdb` (relative to `dbt/`, where both the
+  CLI and Dagster run dbt) and `threads: 1` (single writer).
+- Only built-in generic tests (`unique`, `not_null`, `accepted_values`,
+  `relationships`); multi-column uniqueness is tested on an expression,
+  e.g. `season || '_' || fdorg_person_id`. No dbt packages so far.
+
+Staging models (12):
+
+| Source | Model | One row per | Notes |
+| --- | --- | --- | --- |
+| couk | `stg_couk__matches` | match | `couk_match_ref` built as `I1_2026-08-22_Udinese_Como`; date via `strptime` (fails on a new format); odds left in raw |
+| fdorg | `stg_fdorg__matches` | match | JSON unnested; result as H/D/A; main referee (`type = REFEREE`); `match_date_utc` read from the text, not the session time zone |
+| fdorg | `stg_fdorg__teams` | team and season | |
+| fdorg | `stg_fdorg__squad_players` | player and season | two unnests (teams, then squads); `position_group` in the Transfermarkt vocabulary, unknown roles kept so the test flags them |
+| fdorg | `stg_fdorg__scorers` | scorer, competition, season | `assists`/`penalties` NULL kept, decided in core |
+| transfermarkt | `stg_transfermarkt__competitions`, `__clubs`, `__players` | entity | `Missing` position -> NULL; every player kept |
+| transfermarkt | `stg_transfermarkt__games`, `__appearances` | game, appearance | already in scope; `relationships` tests to games and players |
+| transfermarkt | `stg_transfermarkt__player_valuations`, `__transfers` | valuation, transfer | future transfers (475) excluded; fee 0 = free or unknown |
 
 ## Phases
 
@@ -233,7 +277,9 @@ stays in `ingest/`. Start the UI with `uv run dagster dev` (http://127.0.0.1:300
 - [x] Each source: real sample inspected before coding, findings written below
 
 ### Phase 2 – Staging, core, reconciliation
-- [ ] dbt project wired to DuckDB, sources declared on `raw`
+- [x] dbt project wired to DuckDB, sources declared on `raw`
+- [x] Staging models for the three sources (12 models, 48 tests)
+- [x] dbt models as Dagster assets (`dagster-dbt`), lineage raw -> staging
 - [ ] Team mapping seed, `map_team`, `map_match`
 - [ ] `matching/players.py` + tests (normalisation, scoring, thresholds)
 - [ ] Manual corrections table, `map_player`, match-rate asset check (>= 90%)
@@ -369,6 +415,12 @@ stays in `ingest/`. Start the UI with `uv run dagster dev` (http://127.0.0.1:300
 | 2026-10-29 | Dagster wired after all three sources are ingested | Set it up once, knowing every source; logic stays in tested functions |
 | 2026-10-29 | One Dagster asset per raw table (multi-assets), keys `["raw", "<table>"]` | dagster-dbt links dbt sources to assets with the same name |
 | 2026-10-29 | Sequential execution: in-process executor + single-run backfills | DuckDB allows one writer; the bottleneck is the API rate limit, not compute |
+| 2026-10-29 | dbt Core v1 (1.12), not dbt v2 | dbt-duckdb and dagster-dbt are built on Core v1 |
+| 2026-10-29 | Staging as views, core and marts as tables | Staging is light and always reads the latest raw; core/marts are queried often |
+| 2026-10-29 | Result as H/D/A and role groups in the Transfermarkt vocabulary for every source | One convention across sources; the same accepted_values tests apply |
+| 2026-10-29 | Placeholder values (`"null"`, `Missing`) turned into NULL in staging | Empty values look the same in every source |
+| 2026-10-29 | Future Transfermarkt transfers excluded in staging | Announced moves did not happen yet; they stay in raw |
+| 2026-10-29 | No dbt packages yet (built-in tests only) | Fewer dependencies; reconsider `dbt_utils` for surrogate keys in core |
 
 ## Known limitations
 
