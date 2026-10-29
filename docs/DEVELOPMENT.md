@@ -11,7 +11,7 @@ Updated at the end of every phase.
 | 0 | Project skeleton, tooling, conventions | done |
 | 1 | Ingestion of the three sources into `raw` | done (PR pending) |
 | 2 | dbt staging and core, player reconciliation | done (PR pending) |
-| 3 | Marts, data quality tests, Dagster schedule, CI | in progress (marts, quality done) |
+| 3 | Marts, data quality tests, Dagster schedule, CI | done (PR pending) |
 | 4 | README, architecture diagram, demo | todo |
 
 ## Workflow
@@ -56,7 +56,8 @@ football-data-platform/
     tests/                           # singular dbt tests (e.g. every team is mapped)
     models/staging/<source>/         # _<source>__sources.yml, _<source>__models.yml, stg_*.sql
   tests/
-  .github/workflows/
+  .github/workflows/ci.yml           # lint + tests on every pull request
+  .github/workflows/weekly-pipeline.yml  # full rebuild every Tuesday, uploads the database
 ```
 
 Folders are created when the phase that needs them starts, not before.
@@ -548,6 +549,44 @@ Brief checklist:
   and only seasons with `is_current = false` are checked, so 2026/27 joins the
   check automatically when the next season starts.
 
+## Automation
+
+### Dagster schedule
+
+- Job `weekly_refresh`: the seasonal sources (`group:fdorg`, `group:couk`) and
+  everything downstream (player matching, dbt staging, core, marts and tests).
+  Transfermarkt is a frozen snapshot and is not refreshed. The job is
+  partitioned by season, inferred from the selected assets.
+- Schedule `weekly_current_season`: every Tuesday at 06:00 Europe/Rome (after the
+  weekend round and Monday matches), only the partition of `current_season`
+  (`2627`). Cron and time zone in `config/pipeline.yaml`. It runs where the
+  Dagster daemon runs (e.g. `uv run dagster dev`, or a deployment).
+
+### GitHub Actions
+
+| Workflow | When | What |
+| --- | --- | --- |
+| `ci.yml` | every pull request and push to `main` | `uv sync --locked`, `ruff check`, `ruff format --check`, `dbt parse` (manifest for the Dagster tests), `pytest`. No data, no secrets. |
+| `weekly-pipeline.yml` | Tuesday 06:00 UTC, or by hand (`workflow_dispatch`) | full rebuild with three Dagster commands, then the database and `run_results.json` uploaded as an artifact (30 days) |
+
+The weekly workflow rebuilds everything because GitHub runners start empty and
+keep nothing between runs (option chosen over caching `data/`: GitHub evicts
+caches not used for 7 days, a weekly run is at the limit). Steps:
+
+1. `group:fdorg or group:couk` with `--partition-range "2425...2627"`: every
+   season in one run (single-run backfill policy).
+2. `group:transfermarkt`.
+3. `not (group:fdorg or group:couk or group:transfermarkt)`: player matching and
+   all dbt models and tests. dbt and Python depend on each other (dbt builds
+   `map_team`, Python matches players, dbt builds `map_player` and the rest), and
+   Dagster splits the dbt project in two steps around the matching by itself.
+   Tested locally: 33 seconds, run success. A failing dbt test or match-rate
+   check fails the workflow.
+
+Settings: `concurrency` prevents two runs at once (single DuckDB writer); the
+football-data.org token is the repository secret `FOOTBALL_DATA_ORG_TOKEN`
+(Settings > Secrets and variables > Actions), never in files.
+
 ## Phases
 
 ### Phase 0 – Skeleton
@@ -586,8 +625,8 @@ Brief checklist:
 ### Phase 3 – Marts, quality, CI
 - [x] `mart_player_profile`, `mart_similar_players`
 - [x] dbt tests: unique/not_null, relationships, accepted_values, match counts (171 tests, audit of missing relationships)
-- [ ] Weekly schedule on current season partition
-- [ ] GitHub Actions: lint + tests on PR; weekly pipeline run
+- [x] Weekly schedule on current season partition (`weekly_refresh` + `weekly_current_season`)
+- [x] GitHub Actions: lint + tests on PR (`ci.yml`); weekly pipeline run (`weekly-pipeline.yml`)
 
 ### Phase 4 – Delivery
 - [ ] README: architecture, data model, reconciliation metrics, limitations
@@ -742,11 +781,15 @@ Brief checklist:
 | 2026-10-29 | Player profile: one stats source per season, never mixed within a row | No source covers every season; mixing would blend different definitions (assists) |
 | 2026-10-29 | Similar players by exact kNN on per-90 z-scores within position | A player card needs a personal neighbour list, not groups; the data is small enough for all pairs |
 | 2026-10-29 | 900-minute minimum and top 5 as dbt vars | Tunable without touching the SQL |
+| 2026-10-30 | Weekly GitHub Actions run rebuilds everything instead of caching data | Runners are stateless and caches expire after 7 days unused; 5 minutes, always reproducible |
+| 2026-10-30 | Dagster schedule refreshes the current-season partition only | What a deployment with persistent storage would run; Transfermarkt is a frozen snapshot |
 | 2026-10-30 | Expected matches per season computed as teams x (teams - 1), not hard-coded 380 | Works for leagues of any size; checks completed seasons only, using `is_current` |
 | 2026-10-30 | Test coverage audited from the dbt manifest | Systematic check that every foreign key has a relationships test, instead of reading YAML by eye |
 
 ## Known limitations
 
+- The Dagster schedule needs the daemon running (`dagster dev` or a deployment);
+  on GitHub Actions the weekly workflow rebuilds everything instead.
 - 2026/27 player profiles only exist for scorers, without minutes or cards: the
   football-data.org free plan has no line-ups and Transfermarkt has no 2026/27.
 - Similar players use five output statistics: similar output, not similar style.
