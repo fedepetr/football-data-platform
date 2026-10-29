@@ -10,7 +10,7 @@ Updated at the end of every phase.
 | --- | --- | --- |
 | 0 | Project skeleton, tooling, conventions | done |
 | 1 | Ingestion of the three sources into `raw` | done (PR pending) |
-| 2 | dbt staging and core, player reconciliation | in progress (staging done) |
+| 2 | dbt staging and core, player reconciliation | in progress (staging, teams, matches done) |
 | 3 | Marts, data quality tests, Dagster schedule, CI | todo |
 | 4 | README, architecture diagram, demo | todo |
 
@@ -43,12 +43,16 @@ football-data-platform/
   src/fdp/
     config.py                        # reads config/pipeline.yaml
     ingest/{common,couk,fdorg,transfermarkt}.py  # common: shared helpers (paths, checks, loads)
+    matching/teams.py                # team name matching (ordered letters, checks)
+    matching/team_map.py             # team map draft: names + fixture votes
     matching/players.py
     definitions.py                   # Dagster wiring only
   dbt/
     dbt_project.yml / profiles.yml   # profile points to ../data/fdp.duckdb
     macros/generate_schema_name.sql  # schemas named staging, core, marts
+    seeds/team_map.csv               # reviewed team map, one row per team and source
     seeds/ models/{staging,core,marts}/
+    tests/                           # singular dbt tests (e.g. every team is mapped)
     models/staging/<source>/         # _<source>__sources.yml, _<source>__models.yml, stg_*.sql
   tests/
   .github/workflows/
@@ -250,6 +254,70 @@ Staging models (12):
 | transfermarkt | `stg_transfermarkt__games`, `__appearances` | game, appearance | already in scope; `relationships` tests to games and players |
 | transfermarkt | `stg_transfermarkt__player_valuations`, `__transfers` | valuation, transfer | future transfers (475) excluded; fee 0 = free or unknown |
 
+## Team and match reconciliation
+
+### Teams: how the map was built
+
+The brief asks for a manual team map as a dbt seed. Writing ~150 references by
+hand is slow and error-prone (`Man United` / `Man City`, `Verona` / `Hellas
+Verona FC`), so the seed is drafted by code and then reviewed by hand.
+
+The name method was designed step by step on the real data, each step measured
+against the fixture-based truth (49 couk names -> football-data.org teams):
+
+| Step | Idea | Correct | What was learned |
+| --- | --- | --- | --- |
+| 1 | Count the letters of each word, share of letters in common / longer word | 45/49 | Fails on abbreviations: `man` vs `manchester` = 3/10, so `Man City` -> Hull **City** |
+| 2 | Divide by the **shorter** word: letters of the short word found in the other | 47/49 | Abbreviations fixed; fails on anagrams: `inter` letters are all in `fiorentina` |
+| 3 | Keep the **order** of the letters (longest common subsequence, LCS) | 48/49 | `inter` in `fiorentina` = 3/5; only `Milan` left: a tie with `Internazionale Milano` |
+| 4 | On a tie, prefer the candidate with **fewer extra letters** | 49/49 | Rule found by looking at the error: risk of overfitting |
+| 5 | **Checks**: collisions (two names on one team) and mutual match (the team picks the name back) | - | Detect errors instead of choosing: they flag every wrong match |
+
+Because step 4 was tuned on the data, names alone are not trusted. A second,
+independent method uses fixtures: the same match has the same date and score in
+both sources, so the teams of matching rows "vote" for each other; the most voted
+pair wins (other matches with the same date and score are low-share noise).
+
+`uv run python -m fdp.matching.team_map` writes `data/team_map_review.csv`
+(git-ignored): one row per team and source, football-data.org as hub. A row is
+`sure` only if names and fixtures agree, with no tie, collision or non-mutual
+match; otherwise `review` with the reasons (`disagree`, `tie`, `collision`,
+`not_mutual`, `no_fixtures`).
+
+Review on 2026-10-29: 147 rows, 136 sure, 11 to review.
+
+- 10 confirmed. Fixtures corrected the names where they disagreed: `Verona`
+  -> Hellas Verona (names tied with Chievo Verona), `AC Pisa` -> Pisa Sporting
+  Club (names chose Spezia). Hull City and Frosinone (promoted, no Transfermarkt
+  games) confirmed on names only.
+- 1 removed: Coventry City / transfermarkt. Coventry is not in the Transfermarkt
+  dataset; the draft matched it to Leicester City (flagged with 4 reasons).
+
+The reviewed rows are saved as `dbt/seeds/team_map.csv` (146 rows, the brief's
+columns only). To refresh it (e.g. promoted teams next season): rerun the script,
+review the new `review` rows, update the seed.
+
+### dbt models and tests
+
+- `dim_team`: 49 teams (`team_key` is a readable slug, e.g. `man_united`).
+- `map_team`: one row per team, one column per source (`tm_club_id`,
+  `fdorg_team_id`, `couk_team_name`), pivoted from the seed; NULL when a source
+  has no reference (Coventry City has no Transfermarkt club).
+- `map_match`: one row per football-data.org fixture (the hub, including future
+  matches), joined to couk and Transfermarkt on date + home team + away team
+  after team reconciliation. `match_key` is `season_home_away`, e.g.
+  `2526_inter_milan`. Result: every played match is linked; 2425 and 2526 have
+  760/760 matches in all three sources, 2627 has 168 couk matches and no
+  Transfermarkt games. Matching on season + teams without the date gives the same
+  result with zero date differences, so the date join is safe.
+- Tests that protect the maps over time:
+  - `unique` on every source reference in `map_team` and `map_match`: a wrong
+    match (e.g. keeping Coventry on Leicester's club) fails;
+  - `assert_every_source_team_is_mapped` (singular): every team in staging must
+    be in the seed, so a newly promoted team is reported, not silently dropped;
+  - `assert_every_played_match_is_mapped` (singular): every played couk and
+    Transfermarkt match must reach a fixture.
+
 ## Phases
 
 ### Phase 0 – Skeleton
@@ -280,7 +348,7 @@ Staging models (12):
 - [x] dbt project wired to DuckDB, sources declared on `raw`
 - [x] Staging models for the three sources (12 models, 48 tests)
 - [x] dbt models as Dagster assets (`dagster-dbt`), lineage raw -> staging
-- [ ] Team mapping seed, `map_team`, `map_match`
+- [x] Team mapping seed (drafted by name + fixture matching, reviewed), `dim_team`, `map_team`, `map_match`
 - [ ] `matching/players.py` + tests (normalisation, scoring, thresholds)
 - [ ] Manual corrections table, `map_player`, match-rate asset check (>= 90%)
 - [ ] Dimensions and facts in `core`
@@ -381,8 +449,8 @@ Staging models (12):
 | Question | Status |
 | --- | --- |
 | Is birth date available on the football-data.org person resource? | yes: `dateOfBirth` in squads and scorers |
-| Can matches be joined by date only (fdorg UTC vs couk local time)? | yes: couk time is UK time, same date as UTC for every kickoff |
-| Manual team-name map for couk as dbt seed | needed: names differ (`Inter` vs `FC Internazionale Milano`) |
+| Can matches be joined by date only (fdorg UTC vs couk local time)? | yes: every played match linked, zero date differences across sources |
+| Manual team-name map for couk as dbt seed | done: drafted by code, reviewed, `dbt/seeds/team_map.csv` |
 | Meaning of `HxG` / `AxG` | undocumented, loaded as-is; only in 2026/27 |
 | `Referee` missing in I1: only Serie A or all leagues? | Serie A only, every season; use fdorg `referees` |
 | Does the fdorg free tier give access to past seasons (2024, 2025)? | yes for 2024; 2025 to confirm in the first run |
@@ -421,9 +489,16 @@ Staging models (12):
 | 2026-10-29 | Placeholder values (`"null"`, `Missing`) turned into NULL in staging | Empty values look the same in every source |
 | 2026-10-29 | Future Transfermarkt transfers excluded in staging | Announced moves did not happen yet; they stay in raw |
 | 2026-10-29 | No dbt packages yet (built-in tests only) | Fewer dependencies; reconsider `dbt_utils` for surrogate keys in core |
+| 2026-10-29 | Team seed drafted by code, then reviewed by hand | Faster and safer than 150 references typed by hand; the seed stays the reviewed source of truth |
+| 2026-10-29 | Two independent methods for teams: names (ordered letters) and fixture votes | The name rule was tuned on the data (overfitting risk); fixtures confirm or correct it |
+| 2026-10-29 | Wrong match removed rather than kept (Coventry City / Transfermarkt) | A missing, declared reference is better than a wrong, silent one (it would duplicate Leicester's data) |
+| 2026-10-29 | football-data.org as hub for teams and matches | It has every team and fixture of every season, including 2026/27 and future matches |
+| 2026-10-29 | Readable keys (`man_united`, `2526_inter_milan`) instead of hashes | Easy to read in reviews and debugging; unique by construction (tested) |
 
 ## Known limitations
 
+- Coventry City (2026/27) has no Transfermarkt club: the dataset only covers
+  clubs of the leagues it follows. No data is lost (Transfermarkt has no 2026/27).
 - Sequential runs only (DuckDB single writer). Parallel loads would need a
   multi-writer database or one DuckDB file per source.
 - Transfermarkt data stops on 2026-07-06: no appearances for 2026/27.
