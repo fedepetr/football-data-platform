@@ -11,9 +11,11 @@ competitions:
   - name: Serie A
     fdorg: SA
     couk: I1
+    transfermarkt: IT1
   - name: Premier League
     fdorg: PL
     couk: E0
+    transfermarkt: GB1
 
 sources:
   fdorg:
@@ -53,3 +55,32 @@ sources:
     # Completeness (380 matches per finished season) is a dbt test in phase 3.
     min_rows: 1
     required_columns: [Div, Date, HomeTeam, AwayTeam, FTHG, FTAG, FTR]
+
+  transfermarkt:
+    # Public files of dcaribou/transfermarkt-datasets: <base_url>/<table>.csv.gz.
+    # No credentials needed (Kaggle davidcariboo/player-scores is the alternative).
+    # Snapshot frozen on 2026-07-06: no 2026/27 data.
+    base_url: https://pub-e682421888d945d684bcae8890b0ec20.r2.dev/data
+    timeout_seconds: 120 # appearances is ~45 MB
+    min_rows: 1
+    # Tables loaded once, in this order: appearances is filtered on the loaded games.
+    # `required_columns` are the arrival checks: at least the key of each table.
+    # `scope`: games and appearances keep only competitions and seasons in scope;
+    # every other table is loaded in full (as the brief asks for players).
+    tables:
+      competitions:
+        required_columns: [competition_id]
+      clubs:
+        required_columns: [club_id]
+      players:
+        required_columns: [player_id, name, date_of_birth]
+      games:
+        required_columns: [game_id, competition_id, season]
+        scope: games
+      appearances:
+        required_columns: [appearance_id, game_id, player_id]
+        scope: appearances
+      player_valuations:
+        required_columns: [player_id, date, market_value_in_eur]
+      transfers:
+        required_columns: [player_id, transfer_date]

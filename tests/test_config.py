@@ -13,7 +13,8 @@ def test_seasons_are_valid_codes() -> None:
 
 
 def test_competitions_have_a_code_for_each_source() -> None:
-    """Every competition maps to its football-data.org and football-data.co.uk codes."""
+    """Every competition maps to its code in each source."""
     for competition in load_config()["competitions"]:
         assert competition["fdorg"]
         assert competition["couk"]
+        assert competition["transfermarkt"]
