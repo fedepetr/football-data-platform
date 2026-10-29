@@ -1,0 +1,36 @@
+# Checks on every pull request and on main: code style and tests.
+# No data and no secrets needed: the tests use temporary files and in-memory DuckDB.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install dependencies (exact versions from uv.lock)
+        run: uv sync --locked
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format
+        run: uv run ruff format --check .
+
+      # Dagster reads the dbt manifest when loading the definitions (tests do too).
+      - name: Parse dbt project
+        run: uv run --directory dbt dbt parse
+
+      - name: Tests
+        run: uv run pytest

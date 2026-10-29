@@ -5,6 +5,12 @@
 seasons: ["2425", "2526", "2627"]
 # Season in progress, refreshed weekly.
 current_season: "2627"
+# Weekly refresh of the current season (Dagster schedule; the GitHub Actions
+# workflow .github/workflows/weekly-pipeline.yml runs on the same day).
+# Tuesday 06:00: after the weekend round and the Monday matches.
+schedule:
+  cron: "0 6 * * 2"
+  timezone: Europe/Rome
 
 # One entry per competition, with its code in each source.
 competitions:

@@ -18,8 +18,10 @@ from fdp.ingest import couk, fdorg, transfermarkt
 from fdp.ingest.common import connect, setup_logging
 from fdp.matching import player_map
 
+_CONFIG = load_config()
 # Season partitions from config/pipeline.yaml: "2425", "2526", "2627".
-SEASONS = dg.StaticPartitionsDefinition(load_config()["seasons"])
+SEASONS = dg.StaticPartitionsDefinition(_CONFIG["seasons"])
+CURRENT_SEASON: str = _CONFIG["current_season"]
 
 # The dbt project lives in <repo>/dbt; this file is <repo>/src/fdp/definitions.py.
 DBT_PROJECT = DbtProject(project_dir=Path(__file__).resolve().parents[2] / "dbt")
@@ -115,7 +117,7 @@ def transfermarkt_raw() -> Iterator[dg.MaterializeResult]:
 
 
 PLAYER_MATCHES = dg.AssetKey(["matching", "player_matches"])
-MIN_MATCH_RATE: float = load_config()["matching"]["players"]["min_match_rate"]
+MIN_MATCH_RATE: float = _CONFIG["matching"]["players"]["min_match_rate"]
 
 
 @dg.asset(
@@ -178,9 +180,31 @@ def dbt_models(context: dg.AssetExecutionContext, dbt: DbtCliResource) -> Iterat
     yield from dbt.cli(["build"], context=context).stream()
 
 
+# Weekly refresh: the seasonal sources (football-data.org, football-data.co.uk) for
+# one season, and everything downstream (player matching, dbt staging, core,
+# marts and their tests). Transfermarkt is a one-off snapshot: not refreshed.
+weekly_refresh = dg.define_asset_job(
+    name="weekly_refresh",
+    # Partitioned by season, inferred from the fdorg and couk assets.
+    selection=dg.AssetSelection.groups("fdorg", "couk").downstream(),
+)
+
+
+@dg.schedule(
+    job=weekly_refresh,
+    cron_schedule=_CONFIG["schedule"]["cron"],
+    execution_timezone=_CONFIG["schedule"]["timezone"],
+)
+def weekly_current_season() -> dg.RunRequest:
+    """Every week, refresh the partition of the season in progress only."""
+    return dg.RunRequest(partition_key=CURRENT_SEASON)
+
+
 defs = dg.Definitions(
     assets=[fdorg_raw, couk_raw, transfermarkt_raw, player_matches, dbt_models],
     asset_checks=[player_match_rate],
+    jobs=[weekly_refresh],
+    schedules=[weekly_current_season],
     resources={"dbt": DbtCliResource(project_dir=DBT_PROJECT)},
     # Steps of a run execute one after the other: DuckDB allows a single writer.
     executor=dg.in_process_executor,

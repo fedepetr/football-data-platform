@@ -1,0 +1,68 @@
+# Weekly pipeline run, the same day as the Dagster schedule (config/pipeline.yaml).
+# GitHub runners start empty and keep nothing between runs, so the whole platform
+# is rebuilt from scratch (all seasons, three sources, matching, dbt with its
+# tests): about 5 minutes, always reproducible. A deployment with persistent
+# storage would run the Dagster schedule instead, refreshing the current season only.
+name: Weekly pipeline
+
+on:
+  schedule:
+    # Tuesday 06:00 UTC (GitHub cron is always UTC).
+    - cron: "0 6 * * 2"
+  # Manual run from the Actions tab.
+  workflow_dispatch:
+
+# Never two runs at once.
+concurrency:
+  group: weekly-pipeline
+  cancel-in-progress: false
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # Repository secret (Settings > Secrets and variables > Actions), never in files.
+      FOOTBALL_DATA_ORG_TOKEN: ${{ secrets.FOOTBALL_DATA_ORG_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Parse dbt project
+        run: uv run --directory dbt dbt parse
+
+      # 1. Seasonal sources, every season in one run (single-run backfill policy).
+      - name: Ingest football-data.org and football-data.co.uk
+        run: >
+          uv run dagster asset materialize -m fdp.definitions
+          --select "group:fdorg or group:couk" --partition-range "2425...2627"
+
+      # 2. Transfermarkt snapshot (not partitioned).
+      - name: Ingest Transfermarkt
+        run: >
+          uv run dagster asset materialize -m fdp.definitions
+          --select "group:transfermarkt"
+
+      # 3. Everything downstream: player matching (with its blocking check) and
+      #    dbt staging, core and marts with their tests. A failed test fails the run.
+      - name: Match players and build dbt models
+        run: >
+          uv run dagster asset materialize -m fdp.definitions
+          --select "not (group:fdorg or group:couk or group:transfermarkt)"
+
+      - name: Upload database and dbt results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: football-data-platform-${{ github.run_number }}
+          path: |
+            data/fdp.duckdb
+            dbt/target/run_results.json
+          retention-days: 30
