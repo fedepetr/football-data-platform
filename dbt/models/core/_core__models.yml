@@ -1,0 +1,59 @@
+models:
+  - name: dim_team
+    description: Teams of the project (Serie A and Premier League clubs in scope).
+    columns:
+      - name: team_key
+        data_tests: [unique, not_null]
+      - name: team_name
+        data_tests: [not_null]
+
+  - name: map_team
+    description: >
+      Team references across sources, one row per team. Each source id appears
+      once: a wrong match (two teams on the same club) would fail these tests.
+    columns:
+      - name: team_key
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_team')
+                field: team_key
+      - name: tm_club_id
+        description: Transfermarkt club id; NULL if the club is not in the dataset.
+        data_tests: [unique]
+      - name: fdorg_team_id
+        data_tests: [unique, not_null]
+      - name: couk_team_name
+        data_tests: [unique, not_null]
+
+  - name: map_match
+    description: >
+      Match references across sources, one row per football-data.org fixture.
+      couk_match_ref is NULL for matches not played yet; tm_game_id is NULL for
+      2026/27 (Transfermarkt stops in July 2026) and for matches not played yet.
+    columns:
+      - name: match_key
+        description: Project match key season_home_away, e.g. 2627_genoa_juventus.
+        data_tests: [unique, not_null]
+      - name: fdorg_match_id
+        data_tests: [unique, not_null]
+      - name: couk_match_ref
+        data_tests: [unique]
+      - name: tm_game_id
+        data_tests: [unique]
+      - name: home_team_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_team')
+                field: team_key
+      - name: away_team_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_team')
+                field: team_key
