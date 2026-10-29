@@ -112,7 +112,10 @@ football-data.org client (`get_json`):
 - Fixed pause after every request, computed as `60 / requests_per_minute`
   (6 seconds on the free tier: 10 requests/minute).
 - Retry on 429 and 5xx: up to 4 attempts, waiting 10s, 20s, 40s.
+- Other errors (e.g. 403 bad token, 404 wrong path) fail immediately.
 - All these values come from `config/pipeline.yaml`.
+- Run one season by hand: `uv run python -m fdp.ingest.fdorg 2627`
+  (6 calls, ~40 seconds).
 
 Arrival checks (`check_payload`), run after each API call and before saving:
 
@@ -124,9 +127,32 @@ Arrival checks (`check_payload`), run after each API call and before saving:
 
 A failed check raises `ValueError` naming the file (e.g. `SA scorers 2425`) and
 stops before saving, so the previous good file and rows stay in place.
-- Run one season by hand: `uv run python -m fdp.ingest.fdorg 2627`
-  (6 calls, ~40 seconds).
-- Other errors (e.g. 403 bad token, 404 wrong path) fail immediately.
+
+How CSV files are loaded (`rebuild_raw_csv_table`, used by football-data.co.uk):
+
+- **One row per match**, with the file's own columns: a CSV is already a table.
+- **Rebuilt from all files on disk:** `raw.couk_matches` is recreated with
+  `CREATE OR REPLACE TABLE ... AS SELECT * FROM read_csv('data/raw/couk/*/*.csv', ...)`.
+  Inserting file by file would fail as soon as a season brings new columns.
+- `union_by_name = true` aligns columns by name across seasons (113 to 132
+  columns per file, 167 in the union); missing columns are NULL.
+- `all_varchar = true`: every value is text, no type guessing in raw.
+- Technical columns: `_source_file` (from `filename = true`), `_season` (parent
+  folder of the file), `_loaded_at`.
+- **Idempotent by construction:** the raw files are the source of truth; the
+  weekly refresh replaces the current season file and the table is rebuilt,
+  so it cannot hold duplicates. One statement: if it fails, the old table stays.
+
+football-data.co.uk ingestion (`couk.py`):
+
+- Download `<base_url>/<season>/<code>.csv` following redirects; no retry
+  (no documented rate limit, a failed run is re-run). Season codes match the
+  project ones, no conversion.
+- File saved byte for byte, BOM included.
+- Arrival checks (`check_csv`), before saving: required columns
+  (`Div`, `Date`, `HomeTeam`, `AwayTeam`, `FTHG`, `FTAG`, `FTR`) and at least
+  1 match. Completeness (380 per finished season) is a dbt test in phase 3.
+- Run one season by hand: `uv run python -m fdp.ingest.couk 2627` (no token needed).
 
 ## Phases
 
@@ -142,8 +168,9 @@ stops before saving, so the previous good file and rows stay in place.
 - [x] `ingest/common.py`: DuckDB connection, raw paths, save raw files,
       idempotent JSON load with technical columns
 - [x] fdorg arrival checks (`check_payload`): required list, min items, truncation
-- [ ] couk and Transfermarkt arrival checks (with their ingestion)
-- [ ] `ingest/couk.py`: full season download, `read_csv(union_by_name=true)`
+- [x] `ingest/couk.py`: full season download, `read_csv(union_by_name=true)`,
+      arrival checks; loaded for all seasons (2425/2526: 380 per league; 2627: I1 88, E0 80)
+- [ ] Transfermarkt arrival checks (with its ingestion)
 - [x] `ingest/fdorg.py`: matches/teams/scorers, 10 req/min, retry on 429/5xx,
       raw JSON saved, full season refresh (see decision log)
 - [x] fdorg loaded for all seasons: 6 rows per raw table (SA, PL x 2425, 2526, 2627)
@@ -175,10 +202,26 @@ stops before saving, so the previous good file and rows stay in place.
 ### football-data.co.uk
 - URL `https://www.football-data.co.uk/mmz4281/<season>/<league>.csv`
   redirects: the client must follow redirects.
-- I1 2026/27 (2026-10-29): 88 matches, UTF-8 with BOM, 120 columns,
-  `Date` as `dd/mm/yyyy`.
-- `HxG` / `AxG` present but not documented in `notes.txt`.
-- No `Referee` column in I1 2026/27. To check: E0 and past I1 seasons.
+- All six files checked on 2026-10-29 (I1 and E0 x 2425, 2526, 2627):
+  HTTP 200, UTF-8 with BOM, `Date` as `dd/mm/yyyy`.
+- Rows: 380 for completed seasons; the current season has only played
+  matches (I1 88, E0 80), unlike fdorg which also lists future fixtures.
+- Columns vary by season: I1 119 / 131 / 113, E0 120 / 132 / 114. The
+  difference is mostly bookmaker odds columns appearing and disappearing.
+  An earlier check recorded 120 columns for I1 2627: the column set can also
+  change during a season. Hence `read_csv(..., union_by_name=true)`.
+- Core columns present in every file: `Div`, `Date`, `Time`, `HomeTeam`,
+  `AwayTeam`, `FTHG`, `FTAG`, `FTR`, `HTHG`, `HTAG`, `HTR`, `HS`, `AS`, `HST`,
+  `AST`, `HF`, `AF`, `HC`, `AC`, `HY`, `AY`, `HR`, `AR`.
+- `HxG` / `AxG` only exist in 2026/27 (both leagues), and are not documented
+  in `notes.txt`. Past seasons have no xG from this source.
+- `Referee` exists in every E0 season and in no I1 season: for Serie A the
+  referee comes from fdorg `referees`.
+- `Time` is UK local time: Udinese-Como 2026-08-22 is `17:30` in couk and
+  `16:30Z` in fdorg (18:30 in Italy). Kickoffs end around 21:00 UK, so the
+  match date is the same in both sources.
+- Team names are short (`Inter`, `Como`) while fdorg uses official names
+  (`FC Internazionale Milano`, `Como 1907`): a manual mapping is needed.
 
 ### football-data.org
 - Free tier (checked 2026-10-29 on the pricing, coverage and policies pages):
@@ -224,10 +267,10 @@ stops before saving, so the previous good file and rows stay in place.
 | Question | Status |
 | --- | --- |
 | Is birth date available on the football-data.org person resource? | yes: `dateOfBirth` in squads and scorers |
-| Can matches be joined by date only (fdorg UTC vs couk local time)? | open |
-| Manual team-name map for couk as dbt seed | open |
-| Meaning of `HxG` / `AxG` | undocumented, loaded as-is |
-| `Referee` missing in I1: only Serie A or all leagues? | open (fdorg `referees` can cover it) |
+| Can matches be joined by date only (fdorg UTC vs couk local time)? | yes: couk time is UK time, same date as UTC for every kickoff |
+| Manual team-name map for couk as dbt seed | needed: names differ (`Inter` vs `FC Internazionale Milano`) |
+| Meaning of `HxG` / `AxG` | undocumented, loaded as-is; only in 2026/27 |
+| `Referee` missing in I1: only Serie A or all leagues? | Serie A only, every season; use fdorg `referees` |
 | Does the fdorg free tier give access to past seasons (2024, 2025)? | yes for 2024; 2025 to confirm in the first run |
 | Does fdorg `/teams` return squads on the free tier? | yes |
 | Is fdorg `/scorers` available on the free tier? | yes, with `limit` raised above the default 10 |
@@ -247,11 +290,17 @@ stops before saving, so the previous good file and rows stay in place.
 | 2026-10-29 | Pipeline parameters in `config/pipeline.yaml` instead of code constants | One place to see and change what is loaded; code only holds logic |
 | 2026-10-29 | Arrival checks added after the extract-save-load chain worked | The truncated scorers showed they are needed |
 | 2026-10-29 | Arrival checks run before saving, thresholds in the YAML | Bad data never overwrites a good load; limits in one place |
+| 2026-10-29 | xG kept as in the source (2026/27 only), no model change | Brief lists xG for couk, but past seasons lack it: documented as a limitation |
+| 2026-10-29 | couk CSVs: table rebuilt from all raw files, not inserted file by file | Columns change by season; `union_by_name` handles it only when reading all files together |
+| 2026-10-29 | couk arrival check: at least 1 row, not 380 | Current season holds played matches only; completeness is a dbt test |
 | 2026-10-29 | Dagster wired after all three sources are ingested | Set it up once, knowing every source; logic stays in tested functions |
 
 ## Known limitations
 
 - Transfermarkt data stops on 2026-07-06: no appearances for 2026/27.
+- xG (`HxG` / `AxG`) from football-data.co.uk only exists for 2026/27:
+  past seasons have no xG. The columns are also undocumented in `notes.txt`.
+- Serie A referees are not in football-data.co.uk: taken from football-data.org.
 - fdorg `min_items: 380` assumes 20-team leagues: adding an 18-team league
   (e.g. Bundesliga, 306 matches) needs a per-competition minimum.
 - fdorg client retries only 429 and 5xx (as in the brief): network errors and
