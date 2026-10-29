@@ -112,7 +112,10 @@ football-data.org client (`get_json`):
 - Fixed pause after every request, computed as `60 / requests_per_minute`
   (6 seconds on the free tier: 10 requests/minute).
 - Retry on 429 and 5xx: up to 4 attempts, waiting 10s, 20s, 40s.
+- Other errors (e.g. 403 bad token, 404 wrong path) fail immediately.
 - All these values come from `config/pipeline.yaml`.
+- Run one season by hand: `uv run python -m fdp.ingest.fdorg 2627`
+  (6 calls, ~40 seconds).
 
 Arrival checks (`check_payload`), run after each API call and before saving:
 
@@ -124,9 +127,32 @@ Arrival checks (`check_payload`), run after each API call and before saving:
 
 A failed check raises `ValueError` naming the file (e.g. `SA scorers 2425`) and
 stops before saving, so the previous good file and rows stay in place.
-- Run one season by hand: `uv run python -m fdp.ingest.fdorg 2627`
-  (6 calls, ~40 seconds).
-- Other errors (e.g. 403 bad token, 404 wrong path) fail immediately.
+
+How CSV files are loaded (`rebuild_raw_csv_table`, used by football-data.co.uk):
+
+- **One row per match**, with the file's own columns: a CSV is already a table.
+- **Rebuilt from all files on disk:** `raw.couk_matches` is recreated with
+  `CREATE OR REPLACE TABLE ... AS SELECT * FROM read_csv('data/raw/couk/*/*.csv', ...)`.
+  Inserting file by file would fail as soon as a season brings new columns.
+- `union_by_name = true` aligns columns by name across seasons (113 to 132
+  columns per file, 167 in the union); missing columns are NULL.
+- `all_varchar = true`: every value is text, no type guessing in raw.
+- Technical columns: `_source_file` (from `filename = true`), `_season` (parent
+  folder of the file), `_loaded_at`.
+- **Idempotent by construction:** the raw files are the source of truth; the
+  weekly refresh replaces the current season file and the table is rebuilt,
+  so it cannot hold duplicates. One statement: if it fails, the old table stays.
+
+football-data.co.uk ingestion (`couk.py`):
+
+- Download `<base_url>/<season>/<code>.csv` following redirects; no retry
+  (no documented rate limit, a failed run is re-run). Season codes match the
+  project ones, no conversion.
+- File saved byte for byte, BOM included.
+- Arrival checks (`check_csv`), before saving: required columns
+  (`Div`, `Date`, `HomeTeam`, `AwayTeam`, `FTHG`, `FTAG`, `FTR`) and at least
+  1 match. Completeness (380 per finished season) is a dbt test in phase 3.
+- Run one season by hand: `uv run python -m fdp.ingest.couk 2627` (no token needed).
 
 ## Phases
 
@@ -142,8 +168,9 @@ stops before saving, so the previous good file and rows stay in place.
 - [x] `ingest/common.py`: DuckDB connection, raw paths, save raw files,
       idempotent JSON load with technical columns
 - [x] fdorg arrival checks (`check_payload`): required list, min items, truncation
-- [ ] couk and Transfermarkt arrival checks (with their ingestion)
-- [ ] `ingest/couk.py`: full season download, `read_csv(union_by_name=true)`
+- [x] `ingest/couk.py`: full season download, `read_csv(union_by_name=true)`,
+      arrival checks; loaded for all seasons (2425/2526: 380 per league; 2627: I1 88, E0 80)
+- [ ] Transfermarkt arrival checks (with its ingestion)
 - [x] `ingest/fdorg.py`: matches/teams/scorers, 10 req/min, retry on 429/5xx,
       raw JSON saved, full season refresh (see decision log)
 - [x] fdorg loaded for all seasons: 6 rows per raw table (SA, PL x 2425, 2526, 2627)
@@ -264,6 +291,8 @@ stops before saving, so the previous good file and rows stay in place.
 | 2026-10-29 | Arrival checks added after the extract-save-load chain worked | The truncated scorers showed they are needed |
 | 2026-10-29 | Arrival checks run before saving, thresholds in the YAML | Bad data never overwrites a good load; limits in one place |
 | 2026-10-29 | xG kept as in the source (2026/27 only), no model change | Brief lists xG for couk, but past seasons lack it: documented as a limitation |
+| 2026-10-29 | couk CSVs: table rebuilt from all raw files, not inserted file by file | Columns change by season; `union_by_name` handles it only when reading all files together |
+| 2026-10-29 | couk arrival check: at least 1 row, not 380 | Current season holds played matches only; completeness is a dbt test |
 | 2026-10-29 | Dagster wired after all three sources are ingested | Set it up once, knowing every source; logic stays in tested functions |
 
 ## Known limitations
