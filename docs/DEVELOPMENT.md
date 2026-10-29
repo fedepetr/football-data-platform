@@ -11,7 +11,7 @@ Updated at the end of every phase.
 | 0 | Project skeleton, tooling, conventions | done |
 | 1 | Ingestion of the three sources into `raw` | done (PR pending) |
 | 2 | dbt staging and core, player reconciliation | done (PR pending) |
-| 3 | Marts, data quality tests, Dagster schedule, CI | in progress (marts done) |
+| 3 | Marts, data quality tests, Dagster schedule, CI | in progress (marts, quality done) |
 | 4 | README, architecture diagram, demo | todo |
 
 ## Workflow
@@ -463,7 +463,7 @@ Cross-source checks (dbt tests, all passing):
   independent proof that the player reconciliation is right.
 - Every Transfermarkt appearance (46873) reaches a match, a team and a player.
 
-dbt project: 149 tests (generic and singular) on staging and core.
+dbt project: 171 tests (generic and singular) on staging, core and marts; see Data quality.
 
 ## Marts
 
@@ -519,6 +519,35 @@ dribbles). Alternatives considered: cosine distance (profile shape regardless of
 volume), feature weights per position, PCA for correlated features, k-means to
 add a player "type" next to the neighbours list.
 
+## Data quality
+
+Tests by layer (2026-10-30: `uv run --directory dbt dbt build` -> PASS=201,
+i.e. seeds, models and 171 tests; `uv run pytest` -> 101 tests):
+
+| Layer | What is checked | How |
+| --- | --- | --- |
+| Arrival (Python) | required structure, minimum rows, truncation (`limit`) | `check_payload`, `check_csv`, before saving |
+| Staging (dbt) | keys `unique` + `not_null`, result H/D/A, role groups, appearances -> games/players | generic tests |
+| Reconciliation | every team and every played match mapped; match rate >= 90% | singular tests; blocking Dagster asset check |
+| Core and marts (dbt) | keys `unique` + `not_null` on every dimension and fact; `relationships` from every fact and mart to its dimensions; `accepted_values` on result and role | generic tests |
+| Cross-source (dbt) | scores identical in every source; season goals per player within one goal | singular tests |
+| Completeness (dbt) | completed seasons have every match, all finished | singular test |
+
+Brief checklist:
+
+- `unique` and `not_null` on the keys of every dimension and fact: yes.
+- `relationships` between facts and dimensions: yes. An audit of the dbt
+  manifest (tests vs foreign-key columns) found 8 missing on 2026-10-30, all added:
+  competition and season keys of appearances, scoring and team stats, the
+  opponent team, `map_player.player_key`, and the two marts.
+- `accepted_values` on result (`H`/`D`/`A`, and `W`/`D`/`L` per team) and role
+  (`Goalkeeper`, `Defender`, `Midfield`, `Attack`): yes.
+- Matches per season and competition (380 when completed):
+  `assert_completed_seasons_have_every_match`. The expected count is
+  `teams x (teams - 1)` computed from the data (380 for 20 teams, 306 for 18),
+  and only seasons with `is_current = false` are checked, so 2026/27 joins the
+  check automatically when the next season starts.
+
 ## Phases
 
 ### Phase 0 – Skeleton
@@ -556,7 +585,7 @@ add a player "type" next to the neighbours list.
 
 ### Phase 3 – Marts, quality, CI
 - [x] `mart_player_profile`, `mart_similar_players`
-- [ ] dbt tests: unique/not_null, relationships, accepted_values, match counts
+- [x] dbt tests: unique/not_null, relationships, accepted_values, match counts (171 tests, audit of missing relationships)
 - [ ] Weekly schedule on current season partition
 - [ ] GitHub Actions: lint + tests on PR; weekly pipeline run
 
@@ -713,6 +742,8 @@ add a player "type" next to the neighbours list.
 | 2026-10-29 | Player profile: one stats source per season, never mixed within a row | No source covers every season; mixing would blend different definitions (assists) |
 | 2026-10-29 | Similar players by exact kNN on per-90 z-scores within position | A player card needs a personal neighbour list, not groups; the data is small enough for all pairs |
 | 2026-10-29 | 900-minute minimum and top 5 as dbt vars | Tunable without touching the SQL |
+| 2026-10-30 | Expected matches per season computed as teams x (teams - 1), not hard-coded 380 | Works for leagues of any size; checks completed seasons only, using `is_current` |
+| 2026-10-30 | Test coverage audited from the dbt manifest | Systematic check that every foreign key has a relationships test, instead of reading YAML by eye |
 
 ## Known limitations
 

@@ -42,6 +42,12 @@ models:
           - accepted_values:
               arguments:
                 values: ["transfermarkt", "fdorg"]
+      - name: competition_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_competition')
+                field: competition_key
 
   - name: mart_similar_players
     description: >
@@ -77,3 +83,9 @@ models:
           - accepted_values:
               arguments:
                 values: ["Goalkeeper", "Defender", "Midfield", "Attack"]
+      - name: season_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_season')
+                field: season_key

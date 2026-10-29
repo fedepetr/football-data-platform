@@ -66,7 +66,12 @@ models:
     columns:
       - name: player_key
         description: tm_<Transfermarkt id> when matched, fdorg_<football-data.org id> otherwise.
-        data_tests: [not_null]
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_player')
+                field: player_key
       - name: fdorg_person_id
         data_tests: [unique, not_null]
       - name: tm_player_id
@@ -209,6 +214,18 @@ models:
           - accepted_values:
               arguments:
                 values: ["W", "D", "L"]
+      - name: competition_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_competition')
+                field: competition_key
+      - name: opponent_team_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_team')
+                field: team_key
 
   - name: fct_player_appearance
     description: >
@@ -245,6 +262,18 @@ models:
                 field: team_key
       - name: minutes_played
         data_tests: [not_null]
+      - name: competition_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_competition')
+                field: competition_key
+      - name: season_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_season')
+                field: season_key
 
   - name: fct_player_valuation
     description: >
@@ -343,3 +372,9 @@ models:
         data_tests: [not_null]
       - name: assists_reported
         description: True if football-data.org gave the number, false if 0 was inferred.
+      - name: competition_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_competition')
+                field: competition_key
