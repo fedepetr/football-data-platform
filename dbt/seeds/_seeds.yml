@@ -27,3 +27,18 @@ seeds:
       - name: source_team_ref
         description: Team id (fdorg, transfermarkt) or team name (couk) in that source.
         data_tests: [not_null]
+
+  - name: competition_map
+    description: >
+      Competitions in scope with their code in each source. Mirrors the
+      `competitions` list of config/pipeline.yaml (tests/test_config.py checks
+      they agree, so the Python ingestion and dbt cannot drift apart).
+    columns:
+      - name: competition_key
+        data_tests: [unique, not_null]
+      - name: fdorg_code
+        data_tests: [unique, not_null]
+      - name: couk_code
+        data_tests: [unique, not_null]
+      - name: tm_competition_id
+        data_tests: [unique, not_null]

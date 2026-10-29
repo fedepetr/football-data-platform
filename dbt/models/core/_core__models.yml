@@ -81,3 +81,41 @@ models:
           - accepted_values:
               arguments:
                 values: ["damerau_levenshtein", "token_set", "manual", "unmatched"]
+
+  - name: dim_competition
+    description: Competitions in scope with their code in each source.
+    columns:
+      - name: competition_key
+        data_tests: [unique, not_null]
+
+  - name: dim_season
+    description: Seasons loaded, with first and last fixture date and the season in progress.
+    columns:
+      - name: season_key
+        description: Project season code, e.g. 2425.
+        data_tests: [unique, not_null]
+      - name: is_current
+        description: True for the latest season that has already started.
+
+  - name: dim_player
+    description: >
+      Players in scope: football-data.org players (matched or not) and
+      Transfermarkt players with appearances in the games in scope. Attributes from
+      Transfermarkt when available, otherwise from football-data.org.
+    columns:
+      - name: player_key
+        description: tm_<Transfermarkt id> or fdorg_<football-data.org id> (see map_player).
+        data_tests: [unique, not_null]
+      - name: full_name
+        data_tests: [not_null]
+      - name: position
+        description: Goalkeeper, Defender, Midfield or Attack; NULL when unknown in the source.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["Goalkeeper", "Defender", "Midfield", "Attack"]
+      - name: attributes_source
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["transfermarkt", "fdorg"]
