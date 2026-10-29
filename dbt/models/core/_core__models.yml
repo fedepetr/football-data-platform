@@ -168,3 +168,44 @@ models:
           - accepted_values:
               arguments:
                 values: ["H", "D", "A"]
+
+  - name: fct_team_match_stats
+    description: >
+      One row per played match and team (two per match) with football-data.co.uk
+      statistics from the team's point of view; xG only from 2026/27.
+    data_tests:
+      # Exactly one row per match and team.
+      - unique:
+          arguments:
+            column_name: "match_key || '_' || team_key"
+      # One home and one away row per match.
+      - unique:
+          arguments:
+            column_name: "match_key || '_' || is_home"
+    columns:
+      - name: match_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fct_match')
+                field: match_key
+      - name: team_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_team')
+                field: team_key
+      - name: season_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_season')
+                field: season_key
+      - name: result
+        description: W (win), D (draw), L (loss) for the team.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["W", "D", "L"]
