@@ -20,14 +20,15 @@ def test_normalize_name(name: str, normalized: str) -> None:
 
 def test_similarity_counts_a_swap_as_one_edit() -> None:
     """Damerau-Levenshtein: two swapped letters are a single edit."""
-    score, method = similarity("Lautaro Martinez", "Lautaro Martniez")
+    score, method, _ = similarity("Lautaro Martinez", "Lautaro Martniez")
     assert method == "damerau_levenshtein"
     assert score == pytest.approx(93.75)
 
 
 def test_similarity_ignores_extra_words() -> None:
     """token_set_ratio: a middle name present in one source only does not count."""
-    assert similarity("Lautaro Martínez", "Lautaro Javier Martínez") == (100.0, "token_set")
+    score, method, _ = similarity("Lautaro Martínez", "Lautaro Javier Martínez")
+    assert (score, method) == (100.0, "token_set")
 
 
 def test_similarity_identical_after_normalization() -> None:
@@ -61,3 +62,11 @@ def test_best_candidate_rejects_strangers() -> None:
 def test_best_candidate_without_candidates() -> None:
     """No player with the same birth date (or team): nothing to match."""
     assert best_candidate("Simone Ascione", {}) is None
+
+
+def test_contained_name_does_not_win_a_tie() -> None:
+    """token_set_ratio gives 100 to "Federico" too: fewer edits break the tie,
+    and the LCS tie with the contained name is not a disagreement."""
+    match = best_candidate("Federico Dimarco", {1: "Federico Dimarco", 2: "Federico"})
+    assert match is not None
+    assert (match.tm_player_id, match.lcs_agrees) == (1, True)

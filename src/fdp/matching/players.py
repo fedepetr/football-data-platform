@@ -12,6 +12,7 @@ A second, independent opinion comes from the team method (ordered letters, LCS,
 teams.py): when the two pick different players the match goes to review.
 """
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -38,22 +39,24 @@ def normalize_name(name: str) -> str:
     return " ".join(sorted(normalize_words(unidecode(name).replace("'", ""))))
 
 
-def similarity(name: str, other: str) -> tuple[float, str]:
-    """Score 0-100 between two names and the measure that gave it.
+def similarity(name: str, other: str) -> tuple[float, str, float]:
+    """Score 0-100 between two names, the measure that gave it, and the edit score.
 
     - Damerau-Levenshtein: edits (insert, delete, replace, swap two neighbours)
       needed to turn one name into the other, as a share of the length.
       "martinez" vs "martniez" is one swap, not two replacements.
     - token_set_ratio: compares the words in common and ignores extra words,
       so "lautaro martinez" vs "javier lautaro martinez" scores 100.
-    Both run on the normalised names; the higher score is kept.
+    Both run on the normalised names; the higher score is kept. The edit score is
+    also returned: it breaks ties, because token_set_ratio gives 100 to any name
+    contained in the other ("federico" vs "dimarco federico").
     """
     a, b = normalize_name(name), normalize_name(other)
     edits = DamerauLevenshtein.normalized_similarity(a, b) * 100
     words = fuzz.token_set_ratio(a, b)
     if edits >= words:
-        return edits, "damerau_levenshtein"
-    return words, "token_set"
+        return edits, "damerau_levenshtein", edits
+    return words, "token_set", edits
 
 
 def classify(score: float) -> str:
@@ -74,9 +77,9 @@ class PlayerMatch:
     score: float
     method: str
     band: str
-    # True if another candidate reached the same score (the pick is arbitrary).
+    # True if another candidate is equal on score and edits (the pick is arbitrary).
     tie: bool
-    # True if the team method (ordered letters, LCS) picks the same candidate.
+    # True if the team method (ordered letters, LCS) rates this candidate best too.
     lcs_agrees: bool
 
 
@@ -84,20 +87,24 @@ def best_candidate(name: str, candidates: Mapping[int, str]) -> PlayerMatch | No
     """Pick the best candidate by the brief's score; None if there are no candidates."""
     if not candidates:
         return None
+    # Best score first; on equal scores, fewer edits (same idea as the team
+    # tie-break: "Federico Dimarco" beats "Federico" for "Federico Dimarco").
     scored = sorted(
-        ((*similarity(name, other), tm_id) for tm_id, other in candidates.items()),
+        ((score, edits, method, tm_id) for tm_id, other in candidates.items()
+         for score, method, edits in [similarity(name, other)]),
         reverse=True,
-    )
-    score, method, tm_id = scored[0]
-    tie = len(scored) > 1 and scored[1][0] == score
+    )  # fmt: skip
+    score, edits, method, tm_id = scored[0]
+    # A real tie: the runner-up is equal on both the score and the edits.
+    tie = len(scored) > 1 and scored[1][:2] == (score, edits)
     # Second opinion: the LCS method, in the direction where the shorter name is
     # looked up in the longer one (a name can be shorter on either side).
-    lcs_pick = max(
-        candidates,
-        key=lambda other_id: max(
-            name_score(name, candidates[other_id]), name_score(candidates[other_id], name)
-        ),
-    )
+    # It agrees if our pick has its best score; a one-word name contained in the
+    # pick (e.g. "Federico") can tie with it, and a tie is not a disagreement.
+    lcs = {
+        other_id: max(name_score(name, other), name_score(other, name))
+        for other_id, other in candidates.items()
+    }
     return PlayerMatch(
         tm_player_id=tm_id,
         tm_player_name=candidates[tm_id],
@@ -105,5 +112,5 @@ def best_candidate(name: str, candidates: Mapping[int, str]) -> PlayerMatch | No
         method=method,
         band=classify(score),
         tie=tie,
-        lcs_agrees=lcs_pick == tm_id,
+        lcs_agrees=math.isclose(lcs[tm_id], max(lcs.values())),
     )
