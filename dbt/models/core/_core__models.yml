@@ -119,3 +119,52 @@ models:
           - accepted_values:
               arguments:
                 values: ["transfermarkt", "fdorg"]
+
+  - name: fct_match
+    description: >
+      One row per match (every football-data.org fixture, future ones included),
+      combining the three sources. Scores only for finished matches; xG only from 2026/27;
+      attendance and stadium only where Transfermarkt has the game.
+    columns:
+      - name: match_key
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('map_match')
+                field: match_key
+      - name: competition_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_competition')
+                field: competition_key
+      - name: season_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_season')
+                field: season_key
+      - name: home_team_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_team')
+                field: team_key
+      - name: away_team_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_team')
+                field: team_key
+      - name: result
+        description: H (home win), D (draw), A (away win); NULL if not played yet.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["H", "D", "A"]
