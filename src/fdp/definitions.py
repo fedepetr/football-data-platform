@@ -1,14 +1,17 @@
 """Dagster definitions: wires the ingestion functions as assets, with no logic of its own.
 
 Each raw table is an asset with key ["raw", "<table>"], the same name it has in
-DuckDB: in phase 2 dagster-dbt links dbt sources to these assets automatically.
+DuckDB: dagster-dbt links the dbt sources (source "raw", same table names) to these
+assets automatically, so the graph goes raw -> staging -> ... without extra config.
 Run the UI with `uv run dagster dev` (reads .env for the football-data.org token).
 """
 
 import os
 from collections.abc import Iterator
+from pathlib import Path
 
 import dagster as dg
+from dagster_dbt import DbtCliResource, DbtProject, dbt_assets
 
 from fdp.config import load_config
 from fdp.ingest import couk, fdorg, transfermarkt
@@ -16,6 +19,12 @@ from fdp.ingest.common import connect, setup_logging
 
 # Season partitions from config/pipeline.yaml: "2425", "2526", "2627".
 SEASONS = dg.StaticPartitionsDefinition(load_config()["seasons"])
+
+# The dbt project lives in <repo>/dbt; this file is <repo>/src/fdp/definitions.py.
+DBT_PROJECT = DbtProject(project_dir=Path(__file__).resolve().parents[2] / "dbt")
+# Under `dagster dev`, run `dbt parse` at startup so the manifest (the list of dbt
+# models, tests and sources Dagster reads) always matches the current SQL files.
+DBT_PROJECT.prepare_if_dev()
 
 # A backfill of several seasons runs as one run, looping over the seasons:
 # separate runs in parallel would try to write the same DuckDB file at once.
@@ -104,8 +113,19 @@ def transfermarkt_raw() -> Iterator[dg.MaterializeResult]:
             )
 
 
+@dbt_assets(manifest=DBT_PROJECT.manifest_path)
+def dbt_models(context: dg.AssetExecutionContext, dbt: DbtCliResource) -> Iterator:
+    """Every dbt model is an asset and every dbt test an asset check.
+
+    `dbt build` runs models and their tests in dependency order; Dagster passes the
+    selection, so materializing one model only builds that model.
+    """
+    yield from dbt.cli(["build"], context=context).stream()
+
+
 defs = dg.Definitions(
-    assets=[fdorg_raw, couk_raw, transfermarkt_raw],
+    assets=[fdorg_raw, couk_raw, transfermarkt_raw, dbt_models],
+    resources={"dbt": DbtCliResource(project_dir=DBT_PROJECT)},
     # Steps of a run execute one after the other: DuckDB allows a single writer.
     executor=dg.in_process_executor,
 )

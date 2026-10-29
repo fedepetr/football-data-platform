@@ -25,3 +25,10 @@ def test_season_partitions_come_from_config() -> None:
     assert fdorg_raw.partitions_def == SEASONS
     assert couk_raw.partitions_def == SEASONS
     assert transfermarkt_raw.partitions_def is None
+
+
+def test_dbt_staging_models_depend_on_raw_assets() -> None:
+    """dagster-dbt links each dbt source to the raw asset with the same name."""
+    graph = defs.resolve_asset_graph()
+    parents = graph.get(dg.AssetKey(["staging", "stg_couk__matches"])).parent_keys
+    assert parents == {dg.AssetKey(["raw", "couk_matches"])}

@@ -1,0 +1,92 @@
+models:
+  - name: stg_transfermarkt__competitions
+    description: Every Transfermarkt competition (Serie A is IT1, Premier League GB1).
+    columns:
+      - name: tm_competition_id
+        data_tests: [unique, not_null]
+
+  - name: stg_transfermarkt__clubs
+    description: Every Transfermarkt club.
+    columns:
+      - name: tm_club_id
+        description: Transfermarkt club id (tm_club_id in map_team).
+        data_tests: [unique, not_null]
+
+  - name: stg_transfermarkt__players
+    description: Every Transfermarkt player, with current club and market value (snapshot of July 2026).
+    columns:
+      - name: tm_player_id
+        description: Transfermarkt player id (tm_player_id in map_player).
+        data_tests: [unique, not_null]
+      - name: player_name
+        data_tests: [not_null]
+      - name: date_of_birth
+        description: Missing for ~0.1% of players (real gap in the source, not tested as not_null).
+      - name: position
+        description: Goalkeeper, Defender, Midfield or Attack; NULL when unknown ("Missing" in the source).
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["Goalkeeper", "Defender", "Midfield", "Attack"]
+
+  - name: stg_transfermarkt__games
+    description: Transfermarkt games in scope (IT1, GB1; seasons up to 2025/26).
+    columns:
+      - name: tm_game_id
+        data_tests: [unique, not_null]
+      - name: season
+        data_tests: [not_null]
+      - name: match_date
+        data_tests: [not_null]
+      - name: home_tm_club_id
+        data_tests: [not_null]
+      - name: away_tm_club_id
+        data_tests: [not_null]
+
+  - name: stg_transfermarkt__appearances
+    description: Player appearances in the games in scope.
+    columns:
+      - name: tm_appearance_id
+        data_tests: [unique, not_null]
+      - name: tm_game_id
+        description: Every appearance belongs to a loaded game.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_transfermarkt__games')
+                field: tm_game_id
+      - name: tm_player_id
+        description: Every appearing player exists in the players table.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_transfermarkt__players')
+                field: tm_player_id
+
+  - name: stg_transfermarkt__player_valuations
+    description: Market value history, one row per player and valuation date.
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "tm_player_id || '_' || valuation_date"
+    columns:
+      - name: tm_player_id
+        data_tests: [not_null]
+      - name: market_value_eur
+        data_tests: [not_null]
+
+  - name: stg_transfermarkt__transfers
+    description: Transfers that already happened (future announced ones excluded).
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "concat_ws('_', tm_player_id, transfer_date, from_tm_club_id, to_tm_club_id)"
+    columns:
+      - name: tm_player_id
+        data_tests: [not_null]
+      - name: transfer_date
+        data_tests: [not_null]
+      - name: transfer_fee_eur
+        description: 0 means either a free transfer or an unknown fee.

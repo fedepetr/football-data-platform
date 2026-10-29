@@ -1,0 +1,12 @@
+# Connection to the project DuckDB database.
+# The path is relative to the folder dbt runs from (dbt/, also for Dagster):
+# ../data/fdp.duckdb is the same file the Python ingestion writes to.
+# FDP_DUCKDB_PATH can override it (e.g. in CI or tests).
+fdp:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('FDP_DUCKDB_PATH', '../data/fdp.duckdb') }}"
+      # One thread: DuckDB allows a single writer to the file.
+      threads: 1

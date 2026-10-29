@@ -1,0 +1,69 @@
+models:
+  - name: stg_fdorg__matches
+    description: >
+      One row per match from football-data.org, unnested from the API responses.
+      Includes future fixtures (status SCHEDULED/TIMED) with NULL scores.
+    columns:
+      - name: fdorg_match_id
+        description: football-data.org match id.
+        data_tests: [unique, not_null]
+      - name: match_date_utc
+        description: Match date in UTC, used to join with football-data.co.uk by date.
+        data_tests: [not_null]
+      - name: home_team_id
+        data_tests: [not_null]
+      - name: away_team_id
+        data_tests: [not_null]
+      - name: result
+        description: H (home win), D (draw), A (away win); NULL if not played yet.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["H", "D", "A"]
+      - name: referee
+        description: Main referee (type REFEREE); NULL for future matches.
+
+  - name: stg_fdorg__teams
+    description: One row per team and season from football-data.org /teams.
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "season || '_' || fdorg_team_id"
+    columns:
+      - name: fdorg_team_id
+        data_tests: [not_null]
+      - name: team_name
+        data_tests: [not_null]
+
+  - name: stg_fdorg__squad_players
+    description: One row per player and season from the football-data.org squads.
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "season || '_' || fdorg_person_id"
+    columns:
+      - name: fdorg_person_id
+        description: football-data.org person id (fdorg_person_id in map_player).
+        data_tests: [not_null]
+      - name: player_name
+        data_tests: [not_null]
+      - name: position_group
+        description: Role grouped into the Transfermarkt vocabulary.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["Goalkeeper", "Defender", "Midfield", "Attack"]
+
+  - name: stg_fdorg__scorers
+    description: One row per scorer, competition and season (players with at least one goal).
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "season || '_' || competition_code || '_' || fdorg_person_id"
+    columns:
+      - name: fdorg_person_id
+        data_tests: [not_null]
+      - name: goals
+        data_tests: [not_null]
+      - name: assists
+        description: Often NULL; whether NULL means 0 is decided in core.

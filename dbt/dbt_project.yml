@@ -1,0 +1,34 @@
+# dbt project of the Football Data Platform: raw (loaded by Python) -> staging -> core -> marts.
+# Run from this folder (`uv run --directory dbt dbt build`): profiles.yml is found here
+# and the database path in it is relative to this folder. Dagster runs dbt from here too.
+name: fdp
+version: "1.0.0"
+profile: fdp
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+
+target-path: target
+clean-targets: ["target", "dbt_packages"]
+
+# Each layer goes to its own DuckDB schema (see macros/generate_schema_name.sql).
+models:
+  fdp:
+    staging:
+      # Views: light renaming/typing over raw, always reading the latest raw data.
+      +schema: staging
+      +materialized: view
+    core:
+      # Tables: dimensions, facts and cross-source mappings, queried often.
+      +schema: core
+      +materialized: table
+    marts:
+      +schema: marts
+      +materialized: table
+
+seeds:
+  fdp:
+    # Hand-maintained CSV files (e.g. the team name mapping), versioned in git.
+    +schema: seeds
