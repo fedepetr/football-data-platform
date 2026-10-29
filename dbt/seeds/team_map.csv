@@ -1,0 +1,147 @@
+team_key,team_name,country,source,source_team_ref
+ac_pisa,AC Pisa,Italy,couk,Pisa
+ac_pisa,AC Pisa,Italy,fdorg,487
+ac_pisa,AC Pisa,Italy,transfermarkt,4172
+arsenal,Arsenal,England,couk,Arsenal
+arsenal,Arsenal,England,fdorg,57
+arsenal,Arsenal,England,transfermarkt,11
+aston_villa,Aston Villa,England,couk,Aston Villa
+aston_villa,Aston Villa,England,fdorg,58
+aston_villa,Aston Villa,England,transfermarkt,405
+atalanta,Atalanta,Italy,couk,Atalanta
+atalanta,Atalanta,Italy,fdorg,102
+atalanta,Atalanta,Italy,transfermarkt,800
+bologna,Bologna,Italy,couk,Bologna
+bologna,Bologna,Italy,fdorg,103
+bologna,Bologna,Italy,transfermarkt,1025
+bournemouth,Bournemouth,England,couk,Bournemouth
+bournemouth,Bournemouth,England,fdorg,1044
+bournemouth,Bournemouth,England,transfermarkt,989
+brentford,Brentford,England,couk,Brentford
+brentford,Brentford,England,fdorg,402
+brentford,Brentford,England,transfermarkt,1148
+brighton_hove,Brighton Hove,England,couk,Brighton
+brighton_hove,Brighton Hove,England,fdorg,397
+brighton_hove,Brighton Hove,England,transfermarkt,1237
+burnley,Burnley,England,couk,Burnley
+burnley,Burnley,England,fdorg,328
+burnley,Burnley,England,transfermarkt,1132
+cagliari,Cagliari,Italy,couk,Cagliari
+cagliari,Cagliari,Italy,fdorg,104
+cagliari,Cagliari,Italy,transfermarkt,1390
+chelsea,Chelsea,England,couk,Chelsea
+chelsea,Chelsea,England,fdorg,61
+chelsea,Chelsea,England,transfermarkt,631
+como_1907,Como 1907,Italy,couk,Como
+como_1907,Como 1907,Italy,fdorg,7397
+como_1907,Como 1907,Italy,transfermarkt,1047
+coventry_city,Coventry City,England,couk,Coventry
+coventry_city,Coventry City,England,fdorg,1076
+cremonese,Cremonese,Italy,couk,Cremonese
+cremonese,Cremonese,Italy,fdorg,457
+cremonese,Cremonese,Italy,transfermarkt,2239
+crystal_palace,Crystal Palace,England,couk,Crystal Palace
+crystal_palace,Crystal Palace,England,fdorg,354
+crystal_palace,Crystal Palace,England,transfermarkt,873
+empoli,Empoli,Italy,couk,Empoli
+empoli,Empoli,Italy,fdorg,445
+empoli,Empoli,Italy,transfermarkt,749
+everton,Everton,England,couk,Everton
+everton,Everton,England,fdorg,62
+everton,Everton,England,transfermarkt,29
+fiorentina,Fiorentina,Italy,couk,Fiorentina
+fiorentina,Fiorentina,Italy,fdorg,99
+fiorentina,Fiorentina,Italy,transfermarkt,430
+frosinone,Frosinone,Italy,couk,Frosinone
+frosinone,Frosinone,Italy,fdorg,470
+frosinone,Frosinone,Italy,transfermarkt,8970
+fulham,Fulham,England,couk,Fulham
+fulham,Fulham,England,fdorg,63
+fulham,Fulham,England,transfermarkt,931
+genoa,Genoa,Italy,couk,Genoa
+genoa,Genoa,Italy,fdorg,107
+genoa,Genoa,Italy,transfermarkt,252
+hull_city,Hull City,England,couk,Hull
+hull_city,Hull City,England,fdorg,322
+hull_city,Hull City,England,transfermarkt,3008
+inter,Inter,Italy,couk,Inter
+inter,Inter,Italy,fdorg,108
+inter,Inter,Italy,transfermarkt,46
+ipswich_town,Ipswich Town,England,couk,Ipswich
+ipswich_town,Ipswich Town,England,fdorg,349
+ipswich_town,Ipswich Town,England,transfermarkt,677
+juventus,Juventus,Italy,couk,Juventus
+juventus,Juventus,Italy,fdorg,109
+juventus,Juventus,Italy,transfermarkt,506
+lazio,Lazio,Italy,couk,Lazio
+lazio,Lazio,Italy,fdorg,110
+lazio,Lazio,Italy,transfermarkt,398
+lecce,Lecce,Italy,couk,Lecce
+lecce,Lecce,Italy,fdorg,5890
+lecce,Lecce,Italy,transfermarkt,1005
+leeds_united,Leeds United,England,couk,Leeds
+leeds_united,Leeds United,England,fdorg,341
+leeds_united,Leeds United,England,transfermarkt,399
+leicester_city,Leicester City,England,couk,Leicester
+leicester_city,Leicester City,England,fdorg,338
+leicester_city,Leicester City,England,transfermarkt,1003
+liverpool,Liverpool,England,couk,Liverpool
+liverpool,Liverpool,England,fdorg,64
+liverpool,Liverpool,England,transfermarkt,31
+man_city,Man City,England,couk,Man City
+man_city,Man City,England,fdorg,65
+man_city,Man City,England,transfermarkt,281
+man_united,Man United,England,couk,Man United
+man_united,Man United,England,fdorg,66
+man_united,Man United,England,transfermarkt,985
+milan,Milan,Italy,couk,Milan
+milan,Milan,Italy,fdorg,98
+milan,Milan,Italy,transfermarkt,5
+monza,Monza,Italy,couk,Monza
+monza,Monza,Italy,fdorg,5911
+monza,Monza,Italy,transfermarkt,2919
+napoli,Napoli,Italy,couk,Napoli
+napoli,Napoli,Italy,fdorg,113
+napoli,Napoli,Italy,transfermarkt,6195
+newcastle,Newcastle,England,couk,Newcastle
+newcastle,Newcastle,England,fdorg,67
+newcastle,Newcastle,England,transfermarkt,762
+nottingham,Nottingham,England,couk,Nott'm Forest
+nottingham,Nottingham,England,fdorg,351
+nottingham,Nottingham,England,transfermarkt,703
+parma,Parma,Italy,couk,Parma
+parma,Parma,Italy,fdorg,112
+parma,Parma,Italy,transfermarkt,130
+roma,Roma,Italy,couk,Roma
+roma,Roma,Italy,fdorg,100
+roma,Roma,Italy,transfermarkt,12
+sassuolo,Sassuolo,Italy,couk,Sassuolo
+sassuolo,Sassuolo,Italy,fdorg,471
+sassuolo,Sassuolo,Italy,transfermarkt,6574
+southampton,Southampton,England,couk,Southampton
+southampton,Southampton,England,fdorg,340
+southampton,Southampton,England,transfermarkt,180
+sunderland,Sunderland,England,couk,Sunderland
+sunderland,Sunderland,England,fdorg,71
+sunderland,Sunderland,England,transfermarkt,289
+torino,Torino,Italy,couk,Torino
+torino,Torino,Italy,fdorg,586
+torino,Torino,Italy,transfermarkt,416
+tottenham,Tottenham,England,couk,Tottenham
+tottenham,Tottenham,England,fdorg,73
+tottenham,Tottenham,England,transfermarkt,148
+udinese,Udinese,Italy,couk,Udinese
+udinese,Udinese,Italy,fdorg,115
+udinese,Udinese,Italy,transfermarkt,410
+venezia_fc,Venezia FC,Italy,couk,Venezia
+venezia_fc,Venezia FC,Italy,fdorg,454
+venezia_fc,Venezia FC,Italy,transfermarkt,607
+verona,Verona,Italy,couk,Verona
+verona,Verona,Italy,fdorg,450
+verona,Verona,Italy,transfermarkt,276
+west_ham,West Ham,England,couk,West Ham
+west_ham,West Ham,England,fdorg,563
+west_ham,West Ham,England,transfermarkt,379
+wolverhampton,Wolverhampton,England,couk,Wolves
+wolverhampton,Wolverhampton,England,fdorg,76
+wolverhampton,Wolverhampton,England,transfermarkt,543

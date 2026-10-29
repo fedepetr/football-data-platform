@@ -1,0 +1,29 @@
+models:
+  - name: dim_team
+    description: Teams of the project (Serie A and Premier League clubs in scope).
+    columns:
+      - name: team_key
+        data_tests: [unique, not_null]
+      - name: team_name
+        data_tests: [not_null]
+
+  - name: map_team
+    description: >
+      Team references across sources, one row per team. Each source id appears
+      once: a wrong match (two teams on the same club) would fail these tests.
+    columns:
+      - name: team_key
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_team')
+                field: team_key
+      - name: tm_club_id
+        description: Transfermarkt club id; NULL if the club is not in the dataset.
+        data_tests: [unique]
+      - name: fdorg_team_id
+        data_tests: [unique, not_null]
+      - name: couk_team_name
+        data_tests: [unique, not_null]

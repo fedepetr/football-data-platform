@@ -1,0 +1,29 @@
+seeds:
+  - name: team_map
+    description: >
+      Hand-reviewed team map, one row per team and source (as the brief asks).
+      Drafted by `uv run python -m fdp.matching.team_map` (names with ordered
+      letters + fixture votes), then reviewed: every "review" row was checked and
+      Coventry City / transfermarkt was removed (club not in the Transfermarkt
+      dataset; the draft had matched it to Leicester City).
+    config:
+      column_types:
+        # Mixed values: football-data.org and Transfermarkt ids, couk names.
+        source_team_ref: varchar
+    data_tests:
+      # One reference per team and source.
+      - unique:
+          arguments:
+            column_name: "team_key || '_' || source"
+    columns:
+      - name: team_key
+        description: Project team key, a readable slug (e.g. man_united).
+        data_tests: [not_null]
+      - name: source
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["fdorg", "couk", "transfermarkt"]
+      - name: source_team_ref
+        description: Team id (fdorg, transfermarkt) or team name (couk) in that source.
+        data_tests: [not_null]
