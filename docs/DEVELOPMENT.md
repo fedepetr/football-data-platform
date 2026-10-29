@@ -113,6 +113,17 @@ football-data.org client (`get_json`):
   (6 seconds on the free tier: 10 requests/minute).
 - Retry on 429 and 5xx: up to 4 attempts, waiting 10s, 20s, 40s.
 - All these values come from `config/pipeline.yaml`.
+
+Arrival checks (`check_payload`), run after each API call and before saving:
+
+| Rule | Brief requirement | Config | Catches |
+| --- | --- | --- | --- |
+| The list `items_key` exists | required columns | `items_key` | format change, error message instead of data |
+| At least `min_items` items | minimum rows | `min_items` (matches 380, teams 20, scorers 1) | empty or partial response |
+| Fewer items than the request `limit` | - | `params.limit` | truncated data (as happened with scorers) |
+
+A failed check raises `ValueError` naming the file (e.g. `SA scorers 2425`) and
+stops before saving, so the previous good file and rows stay in place.
 - Run one season by hand: `uv run python -m fdp.ingest.fdorg 2627`
   (6 calls, ~40 seconds).
 - Other errors (e.g. 403 bad token, 404 wrong path) fail immediately.
@@ -130,8 +141,8 @@ football-data.org client (`get_json`):
 - [x] `config/pipeline.yaml` + `config.py`: seasons, competitions, source parameters
 - [x] `ingest/common.py`: DuckDB connection, raw paths, save raw files,
       idempotent JSON load with technical columns
-- [ ] Arrival checks (min rows, required columns): postponed, required by the brief.
-      Include "item count equal to the request `limit` means truncated data".
+- [x] fdorg arrival checks (`check_payload`): required list, min items, truncation
+- [ ] couk and Transfermarkt arrival checks (with their ingestion)
 - [ ] `ingest/couk.py`: full season download, `read_csv(union_by_name=true)`
 - [x] `ingest/fdorg.py`: matches/teams/scorers, 10 req/min, retry on 429/5xx,
       raw JSON saved, full season refresh (see decision log)
@@ -234,10 +245,14 @@ football-data.org client (`get_json`):
 | 2026-10-29 | Idempotent load by `_source_file`, not by season | Reloading one competition must not delete the other |
 | 2026-10-29 | Rate limit as a fixed 6s pause, not by reading API headers | Simple and enough: ~2 minutes for a full load |
 | 2026-10-29 | Pipeline parameters in `config/pipeline.yaml` instead of code constants | One place to see and change what is loaded; code only holds logic |
-| 2026-10-29 | Arrival checks postponed to the end of phase 1 | Get the extract-save-load chain working first |
+| 2026-10-29 | Arrival checks added after the extract-save-load chain worked | The truncated scorers showed they are needed |
+| 2026-10-29 | Arrival checks run before saving, thresholds in the YAML | Bad data never overwrites a good load; limits in one place |
+| 2026-10-29 | Dagster wired after all three sources are ingested | Set it up once, knowing every source; logic stays in tested functions |
 
 ## Known limitations
 
 - Transfermarkt data stops on 2026-07-06: no appearances for 2026/27.
+- fdorg `min_items: 380` assumes 20-team leagues: adding an 18-team league
+  (e.g. Bundesliga, 306 matches) needs a per-competition minimum.
 - fdorg client retries only 429 and 5xx (as in the brief): network errors and
   timeouts fail the run, which is simply re-run.
