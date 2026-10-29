@@ -11,7 +11,7 @@ Updated at the end of every phase.
 | 0 | Project skeleton, tooling, conventions | done |
 | 1 | Ingestion of the three sources into `raw` | done (PR pending) |
 | 2 | dbt staging and core, player reconciliation | done (PR pending) |
-| 3 | Marts, data quality tests, Dagster schedule, CI | todo |
+| 3 | Marts, data quality tests, Dagster schedule, CI | in progress (marts done) |
 | 4 | README, architecture diagram, demo | todo |
 
 ## Workflow
@@ -465,6 +465,60 @@ Cross-source checks (dbt tests, all passing):
 
 dbt project: 149 tests (generic and singular) on staging and core.
 
+## Marts
+
+Tables ready for the demo and analyses, in the `marts` schema.
+
+### `mart_player_profile`: one row per player and season
+
+Personal data (age at the start of the season), main team (most minutes; `teams`
+counts the teams of the season), appearances, minutes, goals, assists, cards and
+the end-of-season market value (last valuation on or before the season's last
+fixture). 2540 rows on 2026-10-29.
+
+No single source covers every season, so there is one source per season, never
+mixed within a row (`stats_source`):
+
+| Season | Source | Why |
+| --- | --- | --- |
+| 2024/25, 2025/26 | Transfermarkt | appearances of every player, with minutes and cards |
+| 2026/27 | football-data.org | Transfermarkt stops in July 2026; scorers only (no line-ups in the free plan), no minutes or cards |
+
+The rule is "Transfermarkt where it has the season, football-data.org otherwise"
+(no season code in the SQL): if Transfermarkt resumed, the current season would
+switch source automatically. Goals agree between the two sources (98.9%);
+assists do not (69%), so compare assists across seasons of different sources
+with care.
+
+### `mart_similar_players`: the 5 most similar players per player and season
+
+Method: **exact k-nearest neighbours (k = 5)**, not clustering. Clustering would
+put every player in a group; here each player gets his own ordered list of the
+closest players, which is what a player card needs (the relation is not
+symmetric: A's neighbours may not include B).
+
+1. Blocking: only players of the same season and position, with at least 900
+   minutes (dbt var `similar_players_min_minutes`; below it per-90 averages are
+   noise). Completed seasons only (Transfermarkt minutes). About 670 players per
+   season.
+2. Features per 90 minutes: goals, assists, yellow and red cards, plus the share
+   of the season's minutes played (38 x 90).
+3. z-score of each feature within season and position, so every feature weighs
+   the same (window functions over `season_key, position`).
+4. Euclidean distance between the z-score vectors, all pairs (brute force:
+   about 60k distances per season, instant in DuckDB); the 5 closest kept
+   (dbt var `similar_players_top_n`). `similarity` = 100 / (1 + distance).
+
+Example, Lautaro Martínez 2025/26 (0.70 goals and 0.25 assists per 90, 64% of
+minutes): Marcus Thuram (distance 1.03), Nikola Krstović, Richarlison, João Pedro,
+Donyell Malen. Malen scores more but assists half as much, so he ranks fifth.
+
+"Similar" means a similar output (scoring, creating, discipline, playing time),
+not a similar playing style: that would need event data (shots, passes,
+dribbles). Alternatives considered: cosine distance (profile shape regardless of
+volume), feature weights per position, PCA for correlated features, k-means to
+add a player "type" next to the neighbours list.
+
 ## Phases
 
 ### Phase 0 – Skeleton
@@ -501,7 +555,7 @@ dbt project: 149 tests (generic and singular) on staging and core.
 - [x] Dimensions and facts in `core`: 4 dimensions, 3 maps, 6 facts, cross-source checks
 
 ### Phase 3 – Marts, quality, CI
-- [ ] `mart_player_profile`, `mart_similar_players`
+- [x] `mart_player_profile`, `mart_similar_players`
 - [ ] dbt tests: unique/not_null, relationships, accepted_values, match counts
 - [ ] Weekly schedule on current season partition
 - [ ] GitHub Actions: lint + tests on PR; weekly pipeline run
@@ -656,9 +710,15 @@ dbt project: 149 tests (generic and singular) on staging and core.
 | 2026-10-29 | Valuations and transfers kept only for players in scope, with full history | Enough for profiles and analyses; 37k instead of 656k valuations |
 | 2026-10-29 | Missing fdorg assists read as 0, with an `assists_reported` flag | 88% confirmed by Transfermarkt; sums need numbers; the flag keeps the information |
 | 2026-10-29 | Goal agreement across sources as a dbt test (tolerance one goal) | Independent check that player matches are right, not only that they exist |
+| 2026-10-29 | Player profile: one stats source per season, never mixed within a row | No source covers every season; mixing would blend different definitions (assists) |
+| 2026-10-29 | Similar players by exact kNN on per-90 z-scores within position | A player card needs a personal neighbour list, not groups; the data is small enough for all pairs |
+| 2026-10-29 | 900-minute minimum and top 5 as dbt vars | Tunable without touching the SQL |
 
 ## Known limitations
 
+- 2026/27 player profiles only exist for scorers, without minutes or cards: the
+  football-data.org free plan has no line-ups and Transfermarkt has no 2026/27.
+- Similar players use five output statistics: similar output, not similar style.
 - Assists are not comparable across sources: football-data.org and Transfermarkt
   agree on 69% of player-seasons where both give a number (different assist
   definitions). Use one source per season and say which.

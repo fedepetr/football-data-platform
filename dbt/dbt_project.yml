@@ -32,3 +32,11 @@ seeds:
   fdp:
     # Hand-maintained CSV files (e.g. the team name mapping), versioned in git.
     +schema: seeds
+
+# Parameters of the marts, overridable with --vars.
+vars:
+  # mart_similar_players: minimum minutes in a season (10 full matches); below it
+  # per-90 averages are noise (one goal in 50 minutes = 1.8 goals per 90).
+  similar_players_min_minutes: 900
+  # mart_similar_players: how many similar players to keep per player and season.
+  similar_players_top_n: 5
