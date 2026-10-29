@@ -245,3 +245,63 @@ models:
                 field: team_key
       - name: minutes_played
         data_tests: [not_null]
+
+  - name: fct_player_valuation
+    description: >
+      Market value history (Transfermarkt) of the players in scope, all dates.
+      team_key is set only when the club is one of the project teams.
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "player_key || '_' || valuation_date"
+    columns:
+      - name: player_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_player')
+                field: player_key
+      - name: valuation_date
+        data_tests: [not_null]
+      - name: market_value_eur
+        data_tests: [not_null]
+      - name: team_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_team')
+                field: team_key
+
+  - name: fct_transfer
+    description: >
+      Transfers that already happened (Transfermarkt) of the players in scope, all
+      dates. from/to team_key set only when the club is one of the project teams.
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "concat_ws('_', player_key, transfer_date, from_tm_club_id, to_tm_club_id)"
+    columns:
+      - name: player_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_player')
+                field: player_key
+      - name: transfer_date
+        data_tests: [not_null]
+      - name: from_team_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_team')
+                field: team_key
+      - name: to_team_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_team')
+                field: team_key
+      - name: transfer_fee_eur
+        description: 0 means either a free transfer or an unknown fee.
