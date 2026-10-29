@@ -89,11 +89,12 @@ def test_ingest_season_saves_and_loads_every_endpoint(sleeps: list[float], tmp_p
 
     folder = tmp_path / "raw" / "fdorg" / "2627"
     assert saved == [folder / f"SA_{name}.json" for name in ("matches", "teams", "scorers")]
-    # The API gets the start year, and scorers get the raised limit.
+    # The API gets the start year, and scorers get the limit set in the YAML config.
+    limit = fdorg.ENDPOINTS["scorers"]["params"]["limit"]
     assert [str(r.url) for r in requests] == [
         "https://test/competitions/SA/matches?season=2026",
         "https://test/competitions/SA/teams?season=2026",
-        "https://test/competitions/SA/scorers?season=2026&limit=200",
+        f"https://test/competitions/SA/scorers?season=2026&limit={limit}",
     ]
     # Accents are written as UTF-8, not as \u escapes.
     assert "Rúben" in saved[0].read_text(encoding="utf-8")

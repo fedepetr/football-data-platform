@@ -130,11 +130,12 @@ football-data.org client (`get_json`):
 - [x] `config/pipeline.yaml` + `config.py`: seasons, competitions, source parameters
 - [x] `ingest/common.py`: DuckDB connection, raw paths, save raw files,
       idempotent JSON load with technical columns
-- [ ] Arrival checks (min rows, required columns): postponed, required by the brief
+- [ ] Arrival checks (min rows, required columns): postponed, required by the brief.
+      Include "item count equal to the request `limit` means truncated data".
 - [ ] `ingest/couk.py`: full season download, `read_csv(union_by_name=true)`
 - [x] `ingest/fdorg.py`: matches/teams/scorers, 10 req/min, retry on 429/5xx,
       raw JSON saved, full season refresh (see decision log)
-- [ ] fdorg loaded for all seasons (2627 done; 2425 and 2526 to run)
+- [x] fdorg loaded for all seasons: 6 rows per raw table (SA, PL x 2425, 2526, 2627)
 - [ ] `ingest/transfermarkt.py`: one-off full load of 7 tables, filtered to scope
 - [ ] Dagster ingestion assets partitioned by season
 - [ ] Each source: real sample inspected before coding, findings written below
@@ -196,6 +197,9 @@ football-data.org client (`get_json`):
 - `/competitions/SA/scorers?season=<year>`:
   - Default `limit` is 10. With `limit=200` the 2026 response returns 144 players,
     i.e. every player with at least one goal.
+  - `limit=200` truncated completed seasons: 2425 and 2526 returned exactly 200.
+    Raised to `limit=1000` (accepted by the API): 2425 PL 271, SA 291;
+    2526 PL 279, SA 297. Lesson: a count equal to the limit means truncated data.
   - `assists` is null for 81/144 players and `penalties` for 134/144:
     most likely null means 0, to confirm in staging.
   - `player.firstName` is empty and `lastName` holds the full name: use `name`.

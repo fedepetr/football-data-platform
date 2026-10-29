@@ -33,4 +33,4 @@ sources:
       scorers:
         path: /competitions/{competition}/scorers
         params:
-          limit: 200 # default is 10: raise it to get every player with a goal
+          limit: 1000 # default is 10: raise it to get every player with a goal
