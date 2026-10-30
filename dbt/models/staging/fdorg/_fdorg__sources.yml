@@ -6,8 +6,17 @@ sources:
     schema: raw
     tables:
       - name: fdorg_matches
-        description: football-data.org /competitions/{code}/matches, one row per competition and season.
+        description: >
+          **Grain:** one row per API response file (competition and season). **Key:** _source_file.
+
+          football-data.org /competitions/{code}/matches, one row per competition and season.
       - name: fdorg_teams
-        description: football-data.org /competitions/{code}/teams (teams and squads), one row per competition and season.
+        description: >
+          **Grain:** one row per API response file (competition and season). **Key:** _source_file.
+
+          football-data.org /competitions/{code}/teams (teams and squads), one row per competition and season.
       - name: fdorg_scorers
-        description: football-data.org /competitions/{code}/scorers, one row per competition and season.
+        description: >
+          **Grain:** one row per API response file (competition and season). **Key:** _source_file.
+
+          football-data.org /competitions/{code}/scorers, one row per competition and season.

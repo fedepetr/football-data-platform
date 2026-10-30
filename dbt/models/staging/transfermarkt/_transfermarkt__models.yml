@@ -1,19 +1,29 @@
 models:
   - name: stg_transfermarkt__competitions
-    description: Every Transfermarkt competition (Serie A is IT1, Premier League GB1).
+    description: >
+      **Grain:** one row per competition. **Key:** tm_competition_id.
+
+      Every Transfermarkt competition (Serie A is IT1, Premier League GB1).
     columns:
       - name: tm_competition_id
+        description: Transfermarkt competition id, e.g. IT1.
         data_tests: [unique, not_null]
 
   - name: stg_transfermarkt__clubs
-    description: Every Transfermarkt club.
+    description: >
+      **Grain:** one row per club. **Key:** tm_club_id.
+
+      Every Transfermarkt club.
     columns:
       - name: tm_club_id
         description: Transfermarkt club id (tm_club_id in map_team).
         data_tests: [unique, not_null]
 
   - name: stg_transfermarkt__players
-    description: Every Transfermarkt player, with current club and market value (snapshot of July 2026).
+    description: >
+      **Grain:** one row per player. **Key:** tm_player_id.
+
+      Every Transfermarkt player, with current club and market value (snapshot of July 2026).
     columns:
       - name: tm_player_id
         description: Transfermarkt player id (tm_player_id in map_player).
@@ -30,9 +40,13 @@ models:
                 values: ["Goalkeeper", "Defender", "Midfield", "Attack"]
 
   - name: stg_transfermarkt__games
-    description: Transfermarkt games in scope (IT1, GB1; seasons up to 2025/26).
+    description: >
+      **Grain:** one row per game in scope. **Key:** tm_game_id.
+
+      Transfermarkt games in scope (IT1, GB1; seasons up to 2025/26).
     columns:
       - name: tm_game_id
+        description: Transfermarkt game id.
         data_tests: [unique, not_null]
       - name: season
         data_tests: [not_null]
@@ -44,9 +58,13 @@ models:
         data_tests: [not_null]
 
   - name: stg_transfermarkt__appearances
-    description: Player appearances in the games in scope.
+    description: >
+      **Grain:** one row per player appearance in a game in scope. **Key:** tm_appearance_id.
+
+      Player appearances in the games in scope.
     columns:
       - name: tm_appearance_id
+        description: Transfermarkt appearance id.
         data_tests: [unique, not_null]
       - name: tm_game_id
         description: Every appearance belongs to a loaded game.
@@ -66,27 +84,42 @@ models:
                 field: tm_player_id
 
   - name: stg_transfermarkt__player_valuations
-    description: Market value history, one row per player and valuation date.
+    description: >
+      **Grain:** one row per player and valuation date. **Key:** tm_player_id + valuation_date.
+
+      Market value history, one row per player and valuation date.
     data_tests:
       - unique:
           arguments:
             column_name: "tm_player_id || '_' || valuation_date"
     columns:
       - name: tm_player_id
+        description: Transfermarkt player id.
         data_tests: [not_null]
       - name: market_value_eur
         data_tests: [not_null]
+      - name: valuation_date
+        description: Date of the Transfermarkt valuation.
 
   - name: stg_transfermarkt__transfers
-    description: Transfers that already happened (future announced ones excluded).
+    description: >
+      **Grain:** one row per transfer already happened. **Key:** tm_player_id + transfer_date + from_tm_club_id + to_tm_club_id.
+
+      Transfers that already happened (future announced ones excluded).
     data_tests:
       - unique:
           arguments:
             column_name: "concat_ws('_', tm_player_id, transfer_date, from_tm_club_id, to_tm_club_id)"
     columns:
       - name: tm_player_id
+        description: Transfermarkt player id.
         data_tests: [not_null]
       - name: transfer_date
+        description: Date of the transfer.
         data_tests: [not_null]
       - name: transfer_fee_eur
         description: 0 means either a free transfer or an unknown fee.
+      - name: from_tm_club_id
+        description: Transfermarkt id of the club the player left.
+      - name: to_tm_club_id
+        description: Transfermarkt id of the club the player joined.

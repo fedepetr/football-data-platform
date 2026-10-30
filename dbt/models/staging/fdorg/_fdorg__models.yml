@@ -1,6 +1,8 @@
 models:
   - name: stg_fdorg__matches
     description: >
+      **Grain:** one row per fixture (future matches included). **Key:** fdorg_match_id.
+
       One row per match from football-data.org, unnested from the API responses.
       Includes future fixtures (status SCHEDULED/TIMED) with NULL scores.
     columns:
@@ -24,19 +26,28 @@ models:
         description: Main referee (type REFEREE); NULL for future matches.
 
   - name: stg_fdorg__teams
-    description: One row per team and season from football-data.org /teams.
+    description: >
+      **Grain:** one row per team and season. **Key:** season + fdorg_team_id.
+
+      One row per team and season from football-data.org /teams.
     data_tests:
       - unique:
           arguments:
             column_name: "season || '_' || fdorg_team_id"
     columns:
       - name: fdorg_team_id
+        description: football-data.org team id.
         data_tests: [not_null]
       - name: team_name
         data_tests: [not_null]
+      - name: season
+        description: Project season code, e.g. 2627 for 2026/27.
 
   - name: stg_fdorg__squad_players
-    description: One row per player and season from the football-data.org squads.
+    description: >
+      **Grain:** one row per player and season. **Key:** season + fdorg_person_id.
+
+      One row per player and season from the football-data.org squads.
     data_tests:
       - unique:
           arguments:
@@ -53,17 +64,27 @@ models:
           - accepted_values:
               arguments:
                 values: ["Goalkeeper", "Defender", "Midfield", "Attack"]
+      - name: season
+        description: Project season code, e.g. 2627 for 2026/27.
 
   - name: stg_fdorg__scorers
-    description: One row per scorer, competition and season (players with at least one goal).
+    description: >
+      **Grain:** one row per scorer, competition and season. **Key:** season + competition_code + fdorg_person_id.
+
+      One row per scorer, competition and season (players with at least one goal).
     data_tests:
       - unique:
           arguments:
             column_name: "season || '_' || competition_code || '_' || fdorg_person_id"
     columns:
       - name: fdorg_person_id
+        description: football-data.org person id.
         data_tests: [not_null]
       - name: goals
         data_tests: [not_null]
       - name: assists
         description: Often NULL; whether NULL means 0 is decided in core.
+      - name: season
+        description: Project season code, e.g. 2627 for 2026/27.
+      - name: competition_code
+        description: football-data.org competition code (SA, PL).

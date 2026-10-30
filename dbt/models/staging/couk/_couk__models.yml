@@ -1,6 +1,8 @@
 models:
   - name: stg_couk__matches
     description: >
+      **Grain:** one row per played match. **Key:** couk_match_ref.
+
       One row per match from football-data.co.uk (Serie A I1, Premier League E0),
       typed and renamed. Current season holds played matches only.
     columns:

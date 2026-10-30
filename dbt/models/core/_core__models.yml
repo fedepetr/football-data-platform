@@ -1,18 +1,25 @@
 models:
   - name: dim_team
-    description: Teams of the project (Serie A and Premier League clubs in scope).
+    description: >
+      **Grain:** one row per team. **Key:** team_key.
+
+      Teams of the project (Serie A and Premier League clubs in scope).
     columns:
       - name: team_key
+        description: Project team key, a readable slug, e.g. man_united.
         data_tests: [unique, not_null]
       - name: team_name
         data_tests: [not_null]
 
   - name: map_team
     description: >
+      **Grain:** one row per team, one column per source. **Key:** team_key (each source id is unique too).
+
       Team references across sources, one row per team. Each source id appears
       once: a wrong match (two teams on the same club) would fail these tests.
     columns:
       - name: team_key
+        description: Project team key, a readable slug, e.g. man_united.
         data_tests:
           - unique
           - not_null
@@ -30,6 +37,8 @@ models:
 
   - name: map_match
     description: >
+      **Grain:** one row per football-data.org fixture. **Key:** match_key (each source id is unique too).
+
       Match references across sources, one row per football-data.org fixture.
       couk_match_ref is NULL for matches not played yet; tm_game_id is NULL for
       2026/27 (Transfermarkt stops in July 2026) and for matches not played yet.
@@ -60,6 +69,8 @@ models:
 
   - name: map_player
     description: >
+      **Grain:** one row per football-data.org player. **Key:** fdorg_person_id (player_key repeats for duplicate ids of one person).
+
       Player references across sources, one row per football-data.org player.
       Matched players (auto or manual) carry their Transfermarkt id; the others
       keep a football-data.org based player_key and match_method "unmatched".
@@ -73,6 +84,7 @@ models:
                 to: ref('dim_player')
                 field: player_key
       - name: fdorg_person_id
+        description: football-data.org person id.
         data_tests: [unique, not_null]
       - name: tm_player_id
         description: NULL when the player is not matched.
@@ -88,13 +100,20 @@ models:
                 values: ["damerau_levenshtein", "token_set", "manual", "unmatched"]
 
   - name: dim_competition
-    description: Competitions in scope with their code in each source.
+    description: >
+      **Grain:** one row per competition in scope. **Key:** competition_key.
+
+      Competitions in scope with their code in each source.
     columns:
       - name: competition_key
+        description: Project competition key, e.g. serie_a.
         data_tests: [unique, not_null]
 
   - name: dim_season
-    description: Seasons loaded, with first and last fixture date and the season in progress.
+    description: >
+      **Grain:** one row per season loaded. **Key:** season_key.
+
+      Seasons loaded, with first and last fixture date and the season in progress.
     columns:
       - name: season_key
         description: Project season code, e.g. 2425.
@@ -104,6 +123,8 @@ models:
 
   - name: dim_player
     description: >
+      **Grain:** one row per player in scope. **Key:** player_key.
+
       Players in scope: football-data.org players (matched or not) and
       Transfermarkt players with appearances in the games in scope. Attributes from
       Transfermarkt when available, otherwise from football-data.org.
@@ -127,11 +148,14 @@ models:
 
   - name: fct_match
     description: >
+      **Grain:** one row per match. **Key:** match_key.
+
       One row per match (every football-data.org fixture, future ones included),
       combining the three sources. Scores only for finished matches; xG only from 2026/27;
       attendance and stadium only where Transfermarkt has the game.
     columns:
       - name: match_key
+        description: Project match key season_home_away, e.g. 2526_inter_milan.
         data_tests:
           - unique
           - not_null
@@ -176,6 +200,8 @@ models:
 
   - name: fct_team_match_stats
     description: >
+      **Grain:** one row per played match and team (two per match). **Key:** match_key + team_key.
+
       One row per played match and team (two per match) with football-data.co.uk
       statistics from the team's point of view; xG only from 2026/27.
     data_tests:
@@ -189,6 +215,7 @@ models:
             column_name: "match_key || '_' || is_home"
     columns:
       - name: match_key
+        description: Project match key season_home_away, e.g. 2526_inter_milan.
         data_tests:
           - not_null
           - relationships:
@@ -196,6 +223,7 @@ models:
                 to: ref('fct_match')
                 field: match_key
       - name: team_key
+        description: Project team key, a readable slug, e.g. man_united.
         data_tests:
           - not_null
           - relationships:
@@ -229,6 +257,8 @@ models:
 
   - name: fct_player_appearance
     description: >
+      **Grain:** one row per player and match. **Key:** appearance_key (also unique: match_key + player_key).
+
       One row per player and match from Transfermarkt (2024/25 and 2025/26 only:
       the dataset stops in July 2026), with minutes, goals, assists and cards.
     data_tests:
@@ -238,6 +268,7 @@ models:
             column_name: "match_key || '_' || player_key"
     columns:
       - name: appearance_key
+        description: Transfermarkt appearance id.
         data_tests: [unique, not_null]
       - name: player_key
         data_tests:
@@ -277,6 +308,8 @@ models:
 
   - name: fct_player_valuation
     description: >
+      **Grain:** one row per player and valuation date. **Key:** player_key + valuation_date.
+
       Market value history (Transfermarkt) of the players in scope, all dates.
       team_key is set only when the club is one of the project teams.
     data_tests:
@@ -285,6 +318,7 @@ models:
             column_name: "player_key || '_' || valuation_date"
     columns:
       - name: player_key
+        description: "Project player key: tm_<Transfermarkt id> when matched, fdorg_<football-data.org id> otherwise."
         data_tests:
           - not_null
           - relationships:
@@ -292,6 +326,7 @@ models:
                 to: ref('dim_player')
                 field: player_key
       - name: valuation_date
+        description: Date of the Transfermarkt valuation.
         data_tests: [not_null]
       - name: market_value_eur
         data_tests: [not_null]
@@ -304,6 +339,8 @@ models:
 
   - name: fct_transfer
     description: >
+      **Grain:** one row per transfer. **Key:** player_key + transfer_date + from_tm_club_id + to_tm_club_id.
+
       Transfers that already happened (Transfermarkt) of the players in scope, all
       dates. from/to team_key set only when the club is one of the project teams.
     data_tests:
@@ -312,6 +349,7 @@ models:
             column_name: "concat_ws('_', player_key, transfer_date, from_tm_club_id, to_tm_club_id)"
     columns:
       - name: player_key
+        description: "Project player key: tm_<Transfermarkt id> when matched, fdorg_<football-data.org id> otherwise."
         data_tests:
           - not_null
           - relationships:
@@ -319,6 +357,7 @@ models:
                 to: ref('dim_player')
                 field: player_key
       - name: transfer_date
+        description: Date of the transfer.
         data_tests: [not_null]
       - name: from_team_key
         data_tests:
@@ -334,9 +373,15 @@ models:
                 field: team_key
       - name: transfer_fee_eur
         description: 0 means either a free transfer or an unknown fee.
+      - name: from_tm_club_id
+        description: Transfermarkt id of the club the player left.
+      - name: to_tm_club_id
+        description: Transfermarkt id of the club the player joined.
 
   - name: fct_player_season_scoring
     description: >
+      **Grain:** one row per player, competition and season. **Key:** player_key + competition_key + season_key.
+
       Goals and assists per player, competition and season from football-data.org
       (players with at least one goal; the only scoring source for 2026/27).
       Missing assists and penalties are read as 0 (assists_reported tells which).
@@ -347,6 +392,7 @@ models:
             column_name: "player_key || '_' || competition_key || '_' || season_key"
     columns:
       - name: player_key
+        description: "Project player key: tm_<Transfermarkt id> when matched, fdorg_<football-data.org id> otherwise."
         data_tests:
           - not_null
           - relationships:
@@ -354,6 +400,7 @@ models:
                 to: ref('dim_player')
                 field: player_key
       - name: season_key
+        description: Project season code, e.g. 2526 for 2025/26.
         data_tests:
           - relationships:
               arguments:
@@ -373,6 +420,7 @@ models:
       - name: assists_reported
         description: True if football-data.org gave the number, false if 0 was inferred.
       - name: competition_key
+        description: Project competition key, e.g. serie_a.
         data_tests:
           - relationships:
               arguments:
