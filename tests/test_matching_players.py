@@ -40,7 +40,7 @@ def test_similarity_identical_after_normalization() -> None:
     ("score", "band"),
     [(100, "auto"), (92.1, "auto"), (92, "review"), (80, "review"), (79.9, "rejected")],
 )
-def test_classify_uses_brief_thresholds(score: float, band: str) -> None:
+def test_classify_uses_config_thresholds(score: float, band: str) -> None:
     """Above 92 automatic, 80 to 92 review, below 80 rejected."""
     assert classify(score) == band
 

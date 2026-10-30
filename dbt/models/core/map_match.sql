@@ -1,4 +1,4 @@
--- One row per match with its reference in each source (the brief's map_match).
+-- One row per match with its reference in each source.
 -- Matches are joined on date + home team + away team, after the team
 -- reconciliation (map_team). football-data.org is the hub: it lists every
 -- fixture, including future ones, which have no couk / Transfermarkt match yet.

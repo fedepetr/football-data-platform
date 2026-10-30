@@ -25,7 +25,7 @@ where p.full_name in ('Lautaro Martínez', 'Frank Anguissa', 'Nikola Stulic');
 
 
 -- 2. How well the player reconciliation worked.
--- Bands from the brief's thresholds (auto > 92, review 80-92, rejected < 80),
+-- Bands from the configured thresholds (auto > 92, review 80-92, rejected < 80),
 -- after the manual review. The window function sum(...) over () gives the total
 -- of all rows, so the share is computed in the same query.
 select
@@ -55,7 +55,7 @@ limit 6;
 -- 4. The proof that matches are right, not only that they exist.
 -- Season goals of each matched player in two independent sources: football-data.org
 -- (scorers) and Transfermarkt (sum of appearances), joined through player_key.
--- A wrong match would break the numbers: 1124 equal, 13 off by one, none more.
+-- A wrong match would break the numbers (2026-10-29: 1124 equal, 13 off by one, none more).
 with transfermarkt as (
     select player_key, season_key, competition_key, sum(goals) as tm_goals
     from fdp.core.fct_player_appearance

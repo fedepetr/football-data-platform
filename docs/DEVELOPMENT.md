@@ -1,17 +1,17 @@
 # Development Guide
 
-Working document for building the Football Data Platform. It tracks the plan,
-the conventions, what we learned about the data and the decisions we made.
-Updated at the end of every phase.
+Development log of the Football Data Platform: the conventions, what was
+learned about the data, and every decision with its reason. The README is the
+overview; this document is the detail behind it.
 
 ## Status
 
 | Phase | Scope | Status |
 | --- | --- | --- |
 | 0 | Project skeleton, tooling, conventions | done |
-| 1 | Ingestion of the three sources into `raw` | done (PR pending) |
-| 2 | dbt staging and core, player reconciliation | done (PR pending) |
-| 3 | Marts, data quality tests, Dagster schedule, CI | done (PR pending) |
+| 1 | Ingestion of the three sources into `raw` | done |
+| 2 | dbt staging and core, player reconciliation | done |
+| 3 | Marts, data quality tests, Dagster schedule, CI | done |
 | 4 | README, architecture diagram, demo | done |
 
 ## Workflow
@@ -29,7 +29,7 @@ Updated at the end of every phase.
 - A phase is done when: its checklist is ticked, checks pass, this document is
   updated (findings, decisions, limitations) and the branch is merged.
 
-## Target layout
+## Layout
 
 ```
 football-data-platform/
@@ -46,7 +46,7 @@ football-data-platform/
     ingest/{common,couk,fdorg,transfermarkt}.py  # common: shared helpers (paths, checks, loads)
     matching/teams.py                # team name matching (ordered letters, checks)
     matching/team_map.py             # team map draft: names + fixture votes
-    matching/players.py              # player rules from the brief (normalise, score, bands)
+    matching/players.py              # player name rules (normalise, score, bands)
     matching/player_map.py           # player reconciliation run (candidates, checks, corrections)
     definitions.py                   # Dagster wiring only
   dbt/
@@ -56,12 +56,11 @@ football-data-platform/
     seeds/ models/{staging,core,marts}/
     tests/                           # singular dbt tests (e.g. every team is mapped)
     models/staging/<source>/         # _<source>__sources.yml, _<source>__models.yml, stg_*.sql
+  app/                               # Streamlit demo, data contract, Parquet export
   tests/
   .github/workflows/ci.yml           # lint + tests on every pull request
-  .github/workflows/weekly-pipeline.yml  # full rebuild every Tuesday, uploads the database
+  .github/workflows/weekly-pipeline.yml  # full rebuild every Tuesday, publishes demo data and dbt docs
 ```
-
-Folders are created when the phase that needs them starts, not before.
 
 ## Configuration
 
@@ -128,7 +127,7 @@ football-data.org client (`get_json`):
 
 Arrival checks (`check_payload`), run after each API call and before saving:
 
-| Rule | Brief requirement | Config | Catches |
+| Rule | Requirement | Config | Catches |
 | --- | --- | --- | --- |
 | The list `items_key` exists | required columns | `items_key` | format change, error message instead of data |
 | At least `min_items` items | minimum rows | `min_items` (matches 380, teams 20, scorers 1) | empty or partial response |
@@ -160,7 +159,7 @@ football-data.co.uk ingestion (`couk.py`):
 - File saved byte for byte, BOM included.
 - Arrival checks (`check_csv`), before saving: required columns
   (`Div`, `Date`, `HomeTeam`, `AwayTeam`, `FTHG`, `FTAG`, `FTR`) and at least
-  1 match. Completeness (380 per finished season) is a dbt test in phase 3.
+  1 match. Completeness (380 per finished season) is a dbt test.
 - Run one season by hand: `uv run python -m fdp.ingest.couk 2627` (no token needed).
 
 Transfermarkt ingestion (`transfermarkt.py`):
@@ -176,7 +175,7 @@ Transfermarkt ingestion (`transfermarkt.py`):
 - Scope filter applied only when loading (the file stays complete):
   - `games`: competitions in scope (`IT1`, `GB1`) and seasons in scope;
   - `appearances`: only appearances of the loaded games;
-  - every other table is loaded in full (as the brief asks for players).
+  - every other table is loaded in full (players who changed league stay matchable).
 - `_season` per row, in the project format, to join with the other sources:
   `games` from `season` (start year 2024 -> `2425`), `appearances` from their
   game. Empty for tables without a season (players, clubs...); valuations and
@@ -205,7 +204,7 @@ stays in `ingest/`. Start the UI with `uv run dagster dev` (http://127.0.0.1:300
 | `transfermarkt_raw` | `raw/transfermarkt_<table>` (7 tables) | none (snapshot) | rows |
 
 - One asset per raw table, keyed `["raw", "<table>"]` like the DuckDB table:
-  dagster-dbt will link dbt sources to them by name in phase 2.
+  dagster-dbt links dbt sources to them by name.
 - Season partitions (`2425`, `2526`, `2627`) come from `config/pipeline.yaml`.
 - DuckDB allows a single writer, so:
   - `in_process_executor`: the steps of a run execute one after the other;
@@ -214,8 +213,8 @@ stays in `ingest/`. Start the UI with `uv run dagster dev` (http://127.0.0.1:300
   - Do not run other scripts on `data/fdp.duckdb` while Dagster writes to it.
 - Run one partition from the command line:
   `uv run dagster asset materialize -m fdp.definitions --select raw/couk_matches --partition 2627`
-- dbt models are assets too (`@dbt_assets`, keys `staging/<model>`), and every
-  dbt test is an asset check (48 on staging). Each dbt source `raw.<table>` is
+- dbt models are assets too (`@dbt_assets`, keys `<layer>/<model>`), and every
+  dbt test is an asset check. Each dbt source `raw.<table>` is
   linked to the raw asset with the same key, so the lineage is raw -> staging.
 - `DBT_PROJECT.prepare_if_dev()` runs `dbt parse` when `dagster dev` starts, so
   Dagster reads an up-to-date manifest. On a fresh clone, run
@@ -266,7 +265,7 @@ Staging models (12):
 
 ### Teams: how the map was built
 
-The brief asks for a manual team map as a dbt seed. Writing ~150 references by
+The team map is a manually maintained dbt seed. Writing ~150 references by
 hand is slow and error-prone (`Man United` / `Man City`, `Verona` / `Hellas
 Verona FC`), so the seed is drafted by code and then reviewed by hand.
 
@@ -301,7 +300,7 @@ Review on 2026-10-29: 147 rows, 136 sure, 11 to review.
 - 1 removed: Coventry City / transfermarkt. Coventry is not in the Transfermarkt
   dataset; the draft matched it to Leicester City (flagged with 4 reasons).
 
-The reviewed rows are saved as `dbt/seeds/team_map.csv` (146 rows, the brief's
+The reviewed rows are saved as `dbt/seeds/team_map.csv` (146 rows, seed
 columns only). To refresh it (e.g. promoted teams next season): rerun the script,
 review the new `review` rows, update the seed.
 
@@ -329,7 +328,7 @@ review the new `review` rows, update the seed.
 ## Player reconciliation
 
 football-data.org players (2220 people from squads and scorers) are matched to
-Transfermarkt players (50149). Rules from the brief, in `matching/players.py`:
+Transfermarkt players (50149). Rules in `matching/players.py`:
 
 1. **Normalisation**: unidecode, lowercase, punctuation removed, words in
    alphabetical order (`Martínez Lautaro` = `Lautaro Martinez`). Apostrophes are
@@ -353,7 +352,7 @@ Transfermarkt players (50149). Rules from the brief, in `matching/players.py`:
 6. **Reverse check on rejected matches**: a rejected candidate proposed by both
    rules (same birth date AND same team and season) gets the flag
    `same_birth_date_and_team` and is listed for review; the band stays
-   `rejected`, as the brief asks. Found while designing `dim_player`: 107
+   `rejected` (the threshold is not bent). Found while designing `dim_player`: 107
    Transfermarkt players with appearances in scope were not matched, and some
    were the same people under a different part of their full name
    (`Max` / `Maximilian Kilman`, `André` / `Frank Zambo Anguissa`).
@@ -363,7 +362,7 @@ Transfermarkt players (50149). Rules from the brief, in `matching/players.py`:
 
 The team method (ordered letters, LCS) was also tried as the main rule: 92.7%
 auto on birth-date candidates with no disagreement with exact-name matches. It
-is kept as an independent second opinion; the brief's measures are the main rule.
+is kept as an independent second opinion; the edit-distance score is the main rule.
 
 Run: Dagster asset `matching/player_matches` (Python, between staging and core)
 or `uv run python -m fdp.matching.player_map`. It writes
@@ -470,7 +469,7 @@ Cross-source checks (dbt tests, all passing):
   independent proof that the player reconciliation is right.
 - Every Transfermarkt appearance (46873) reaches a match, a team and a player.
 
-dbt project: 171 tests (generic and singular) on staging, core and marts; see Data quality.
+dbt project: 177 tests (generic and singular) on staging, core and marts; see Data quality.
 
 ## Marts
 
@@ -535,8 +534,8 @@ add a player "type" next to the neighbours list.
 
 ## Data quality
 
-Tests by layer (2026-10-30: `uv run --directory dbt dbt build` -> PASS=201,
-i.e. seeds, models and 171 tests; `uv run pytest` -> 101 tests):
+Tests by layer (2026-10-30: `uv run --directory dbt dbt build` -> PASS=207,
+i.e. 3 seeds, 27 models and 177 tests; `uv run pytest` -> 111 tests):
 
 | Layer | What is checked | How |
 | --- | --- | --- |
@@ -547,7 +546,7 @@ i.e. seeds, models and 171 tests; `uv run pytest` -> 101 tests):
 | Cross-source (dbt) | scores identical in every source; season goals per player within one goal | singular tests |
 | Completeness (dbt) | completed seasons have every match, all finished | singular test |
 
-Brief checklist:
+Required checks:
 
 - `unique` and `not_null` on the keys of every dimension and fact: yes.
 - `relationships` between facts and dimensions: yes. An audit of the dbt
@@ -580,7 +579,7 @@ Brief checklist:
 | Workflow | When | What |
 | --- | --- | --- |
 | `ci.yml` | every pull request and push to `main` | `uv sync --locked`, `ruff check`, `ruff format --check`, `dbt parse` (manifest for the Dagster tests), `pytest`. No data, no secrets. |
-| `weekly-pipeline.yml` | Tuesday 06:00 UTC, or by hand (`workflow_dispatch`) | full rebuild with three Dagster commands, then the database and `run_results.json` uploaded as an artifact (30 days) |
+| `weekly-pipeline.yml` | Tuesday 06:00 UTC, or by hand (`workflow_dispatch`) | full rebuild with three Dagster commands, demo app tests, demo data and dbt docs published; the database and `run_results.json` uploaded as an artifact (30 days) |
 
 The weekly workflow rebuilds everything because GitHub runners start empty and
 keep nothing between runs (option chosen over caching `data/`: GitHub evicts
@@ -611,8 +610,9 @@ First runs on GitHub (2026-10-29):
 
 Follow-ups: the token error now mentions both `.env` and the repository secret.
 The workflows use the current major versions of the actions (checkout v7,
-setup-uv v10.3.3 (it publishes full versions only, no `v10` tag), upload-artifact v7, upload-pages-artifact v5, deploy-pages v5), which
-run on Node.js 24: GitHub had flagged the previous ones (Node.js 20, deprecated).
+setup-uv v10.3.3, upload-artifact v7, upload-pages-artifact v5, deploy-pages v5),
+which run on Node.js 24 (the previous ones ran on the deprecated Node.js 20).
+setup-uv publishes full version tags only, so it is pinned to `v10.3.3`.
 Still open: `dagster asset materialize` prints a SupersessionWarning, the new
 `dg launch --assets` command will replace it (works today, migrate later).
 
@@ -716,7 +716,7 @@ Found while building it:
 
 ### Phase 3 – Marts, quality, CI
 - [x] `mart_player_profile`, `mart_similar_players`
-- [x] dbt tests: unique/not_null, relationships, accepted_values, match counts (171 tests, audit of missing relationships)
+- [x] dbt tests: unique/not_null, relationships, accepted_values, match counts (177 tests, audit of missing relationships)
 - [x] Weekly schedule on current season partition (`weekly_refresh` + `weekly_current_season`)
 - [x] GitHub Actions: lint + tests on PR (`ci.yml`); weekly pipeline run (`weekly-pipeline.yml`)
 
@@ -814,7 +814,7 @@ Found while building it:
 | Manual team-name map for couk as dbt seed | done: drafted by code, reviewed, `dbt/seeds/team_map.csv` |
 | Meaning of `HxG` / `AxG` | undocumented, loaded as-is; only in 2026/27 |
 | `Referee` missing in I1: only Serie A or all leagues? | Serie A only, every season; use fdorg `referees` |
-| Does the fdorg free tier give access to past seasons (2024, 2025)? | yes for 2024; 2025 to confirm in the first run |
+| Does the fdorg free tier give access to past seasons (2024, 2025)? | yes, both |
 | Does fdorg `/teams` return squads on the free tier? | yes |
 | Is fdorg `/scorers` available on the free tier? | yes, with `limit` raised above the default 10 |
 | Does fdorg `assists: null` mean 0? | mostly: Transfermarkt counts 0 in 88% of those cases; read as 0 with `assists_reported` |
@@ -823,17 +823,16 @@ Found while building it:
 
 | Date | Decision | Why |
 | --- | --- | --- |
-| 2026-10-29 | Repo private during development, public in phase 4 | Publish only when README and demo are ready. In fact it was public from the start; the history was checked and contains no secrets |
 | 2026-10-29 | Feature branches + PR into `main`, Conventional Commits | Readable history, CI on PRs from phase 3 |
 | 2026-10-29 | Season code `2627` across the project, converted to `2026` only for the fdorg API | One key to compare the three sources |
-| 2026-10-29 | fdorg: full season refresh instead of the brief's incremental window (`last date - 7 days`) | One call returns the whole season: same cost, simpler replace, no missed postponed matches |
+| 2026-10-29 | fdorg: full season refresh instead of an incremental window (`last date - 7 days`) | One call returns the whole season: same cost, simpler replace, no missed postponed matches |
 | 2026-10-29 | Raw JSON stored as one row per file in a `payload` column (schema-on-read) | Raw load cannot break on source changes; typing done in dbt staging |
 | 2026-10-29 | Idempotent load by `_source_file`, not by season | Reloading one competition must not delete the other |
 | 2026-10-29 | Rate limit as a fixed 6s pause, not by reading API headers | Simple and enough: ~2 minutes for a full load |
 | 2026-10-29 | Pipeline parameters in `config/pipeline.yaml` instead of code constants | One place to see and change what is loaded; code only holds logic |
 | 2026-10-29 | Arrival checks added after the extract-save-load chain worked | The truncated scorers showed they are needed |
 | 2026-10-29 | Arrival checks run before saving, thresholds in the YAML | Bad data never overwrites a good load; limits in one place |
-| 2026-10-29 | xG kept as in the source (2026/27 only), no model change | Brief lists xG for couk, but past seasons lack it: documented as a limitation |
+| 2026-10-29 | xG kept as in the source (2026/27 only), no model change | couk is the xG source, but past seasons lack it: documented as a limitation |
 | 2026-10-29 | couk CSVs: table rebuilt from all raw files, not inserted file by file | Columns change by season; `union_by_name` handles it only when reading all files together |
 | 2026-10-29 | couk arrival check: at least 1 row, not 380 | Current season holds played matches only; completeness is a dbt test |
 | 2026-10-29 | Transfermarkt from the public dataset files, not Kaggle | No credentials: a recruiter can clone and run; same download code as couk. Kaggle kept as a possible alternative |
@@ -855,14 +854,14 @@ Found while building it:
 | 2026-10-29 | Wrong match removed rather than kept (Coventry City / Transfermarkt) | A missing, declared reference is better than a wrong, silent one (it would duplicate Leicester's data) |
 | 2026-10-29 | football-data.org as hub for teams and matches | It has every team and fixture of every season, including 2026/27 and future matches |
 | 2026-10-29 | Readable keys (`man_united`, `2526_inter_milan`) instead of hashes | Easy to read in reviews and debugging; unique by construction (tested) |
-| 2026-10-29 | Brief's player score as main rule, team LCS method as second opinion | The brief fixes the method; the LCS method was benchmarked (92.7% auto) and kept as a cross-check |
+| 2026-10-29 | Edit-distance player score as main rule, team LCS method as second opinion | Standard, explainable measures; the LCS method was benchmarked (92.7% auto) and kept as a cross-check |
 | 2026-10-29 | Ties on player score broken by fewer edits (Damerau-Levenshtein) | token_set_ratio scores contained names at 100; same idea as the team tie-break |
 | 2026-10-29 | Apostrophes deleted in player names, not used as separators | Sources disagree (`N'Diaye` / `Ndiaye`); "no punctuation" applied to person names |
 | 2026-10-29 | Collision only when birth dates differ | football-data.org has duplicate ids for one person; they may share a match |
 | 2026-10-29 | `review` is not a match until confirmed in the corrections file | Only reviewed decisions count; the asset check counts auto + manual |
 | 2026-10-29 | Doubtful duplicates not confirmed (Éderson 1689, Koné 172183) | Accept a match only when name, team and birth date agree |
 | 2026-10-29 | `map_player` keeps unmatched football-data.org players with `fdorg_<id>` keys | Facts from football-data.org (season scoring) always find a player |
-| 2026-10-29 | Reverse check: rejected matches with same birth date and team listed for review | Brief thresholds kept, but strong evidence is not discarded without a human look; avoids duplicate players in dim_player |
+| 2026-10-29 | Reverse check: rejected matches with same birth date and team listed for review | Thresholds kept, but strong evidence is not discarded without a human look; avoids duplicate players in dim_player |
 | 2026-10-29 | Blocking asset check on the match rate | A quality drop stops downstream models instead of spreading bad data |
 | 2026-10-29 | `competition_map` seed mirrors the YAML config, checked by a Python test | dbt cannot read the YAML; the test keeps the two copies equal |
 | 2026-10-29 | Season dates and `is_current` derived from the fixtures | No yearly manual update; the API's declared season start is unreliable |
@@ -875,7 +874,6 @@ Found while building it:
 | 2026-10-29 | 900-minute minimum and top 5 as dbt vars | Tunable without touching the SQL |
 | 2026-10-30 | Grain and key stated in every dbt description, checked by a test on the manifest | The key was only implied by unique tests; readers need "one row per what" first to join correctly |
 | 2026-10-30 | dbt docs as one static page on GitHub Pages, deployed only after a successful run | No server needed; never publishes the documentation of a failed build |
-| 2026-10-30 | Kaggle credentials removed from `.env.example` | Transfermarkt comes from public files; one credential left (football-data.org) |
 | 2026-10-30 | Demo app in the same repository, in its own folder with its own dependencies | One link for pipeline and demo; a mart change and the app change go in one PR; the contract keeps the boundary |
 | 2026-10-30 | Explicit data contract between platform and app, checked at start-up, in tests and weekly | A renamed column fails a test before it breaks the online page |
 | 2026-10-30 | Demo data published as Parquet on a GitHub release, not committed | Public URLs, replaced weekly, data stays out of git; 0.5 MB with contract columns only |
@@ -892,8 +890,8 @@ Found while building it:
   Actions tab.
 - The Dagster schedule needs the daemon running (`dagster dev` or a deployment);
   on GitHub Actions the weekly workflow rebuilds everything instead.
-- 2026/27 player profiles only exist for scorers, without minutes or cards: the
-  football-data.org free plan has no line-ups and Transfermarkt has no 2026/27.
+- Transfermarkt data stops on 2026-07-06: 2026/27 player profiles only exist for
+  scorers, without minutes or cards (the football-data.org free plan has no line-ups).
 - Similar players use five output statistics: similar output, not similar style.
 - Assists are not comparable across sources: football-data.org and Transfermarkt
   agree on 69% of player-seasons where both give a number (different assist
@@ -908,7 +906,6 @@ Found while building it:
   clubs of the leagues it follows. No data is lost (Transfermarkt has no 2026/27).
 - Sequential runs only (DuckDB single writer). Parallel loads would need a
   multi-writer database or one DuckDB file per source.
-- Transfermarkt data stops on 2026-07-06: no appearances for 2026/27.
 - Transfermarkt files come from the dataset author's public bucket: the URL may
   change; the Kaggle dataset `davidcariboo/player-scores` is the fallback.
 - xG (`HxG` / `AxG`) from football-data.co.uk only exists for 2026/27:
@@ -916,5 +913,6 @@ Found while building it:
 - Serie A referees are not in football-data.co.uk: taken from football-data.org.
 - fdorg `min_items: 380` assumes 20-team leagues: adding an 18-team league
   (e.g. Bundesliga, 306 matches) needs a per-competition minimum.
-- fdorg client retries only 429 and 5xx (as in the brief): network errors and
-  timeouts fail the run, which is simply re-run.
+- fdorg client retries only 429 and 5xx: network errors and timeouts fail the
+  run, which is simply re-run (it happened once, on 2026-10-30: a refused
+  connection; the re-run passed). A failed ingestion publishes nothing.

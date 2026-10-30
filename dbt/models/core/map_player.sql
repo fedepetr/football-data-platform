@@ -1,4 +1,4 @@
--- One row per football-data.org player with its Transfermarkt match (the brief's map_player).
+-- One row per football-data.org player with its Transfermarkt match.
 -- Accepted matches: band "auto" (score above 92, no failed check) or "manual"
 -- (reviewed correction). Every other player is kept without a Transfermarkt id,
 -- so football-data.org facts (e.g. season scoring) always find a player_key.

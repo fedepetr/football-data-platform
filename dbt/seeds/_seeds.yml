@@ -3,7 +3,7 @@ seeds:
     description: >
       **Grain:** one row per team and source. **Key:** team_key + source.
 
-      Hand-reviewed team map, one row per team and source (as the brief asks).
+      Hand-reviewed team map, one row per team and source.
       Drafted by `uv run python -m fdp.matching.team_map` (names with ordered
       letters + fixture votes), then reviewed: every "review" row was checked and
       Coventry City / transfermarkt was removed (club not in the Transfermarkt

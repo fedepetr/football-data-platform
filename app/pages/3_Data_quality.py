@@ -42,7 +42,7 @@ columns = st.columns(3)
 columns[0].metric(
     "Players matched", f"{matched:.1%}", help="auto + manual; the pipeline stops below 90%"
 )
-columns[1].metric("Football-data.org players", f"{bands.players.sum():,}")
+columns[1].metric("football-data.org players", f"{bands.players.sum():,}")
 columns[2].metric(
     "Reviewed by hand", int(bands.loc[bands.band.str.startswith("manual"), "players"].sum())
 )
@@ -83,8 +83,9 @@ with right:
 
 st.subheader("Hard cases decided by hand")
 st.caption(
-    "Names that no string similarity would match: the sources use different parts of "
-    "the full name. Flagged because birth date and team agree, then confirmed by hand."
+    "Matches confirmed by hand after review, lowest name score first: nicknames "
+    "(Will / William Smallbone) and names built from different parts of the full name, "
+    "which no string similarity can match. Each decision keeps its reason."
 )
 st.dataframe(
     query(
@@ -203,7 +204,7 @@ st.dataframe(
 )
 
 st.caption(
-    "Also checked by the pipeline (dbt tests, 171 in total): unique keys, relationships "
+    "Also checked by the pipeline (dbt tests): unique keys, relationships "
     "between facts and dimensions, identical scores in every source, and completed "
     "seasons with every match played."
 )

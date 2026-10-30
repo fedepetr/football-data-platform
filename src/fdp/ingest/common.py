@@ -61,7 +61,6 @@ def save_raw(content: bytes, path: Path) -> Path:
     (football-data.co.uk). Creates missing folders and overwrites an existing file,
     so re-running a season replaces its raw files.
     """
-    # Same as `mkdir -p`: create data/raw/<source>/<season>/ if needed.
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(content)
     return path

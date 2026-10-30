@@ -1,4 +1,4 @@
-"""Player name matching rules from the brief (football-data.org -> Transfermarkt).
+"""Player name matching rules (football-data.org -> Transfermarkt).
 
 1. Normalise names: lowercase, no accents or punctuation, words in alphabetical
    order ("Martínez Lautaro" and "Lautaro Martinez" -> "lautaro martinez").
@@ -60,7 +60,7 @@ def similarity(name: str, other: str) -> tuple[float, str, float]:
 
 
 def classify(score: float) -> str:
-    """Brief thresholds: "auto" above 92, "review" from 80 to 92, "rejected" below 80."""
+    """Band of a score: "auto" above 92, "review" 80-92, "rejected" below 80 (from config)."""
     if score > AUTO_THRESHOLD:
         return "auto"
     if score >= REVIEW_THRESHOLD:
@@ -84,7 +84,7 @@ class PlayerMatch:
 
 
 def best_candidate(name: str, candidates: Mapping[int, str]) -> PlayerMatch | None:
-    """Pick the best candidate by the brief's score; None if there are no candidates."""
+    """Pick the best candidate by name score; None if there are no candidates."""
     if not candidates:
         return None
     # Best score first; on equal scores, fewer edits (same idea as the team

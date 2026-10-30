@@ -23,7 +23,6 @@ from fdp.ingest.common import (
 )
 
 SOURCE = "transfermarkt"
-# One logger per module: messages show where they come from (fdp.ingest.transfermarkt).
 logger = logging.getLogger(__name__)
 
 # All parameters come from config/pipeline.yaml (read once, when the module is imported).
@@ -149,11 +148,9 @@ def ingest(
 def main() -> None:
     """Command line entry point: `uv run python -m fdp.ingest.transfermarkt`."""
     setup_logging()
-    # `with` closes the HTTP client and the database even if an error occurs.
     with make_client() as client, connect() as con:
         ingest(client, con)
 
 
-# Runs only when the file is executed directly, not when it is imported (tests, Dagster).
 if __name__ == "__main__":
     main()

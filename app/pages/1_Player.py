@@ -1,5 +1,6 @@
 """Player page: profile, seasons, market value history and identity in each source."""
 
+import pandas as pd
 import streamlit as st
 
 from demo_data import query
@@ -31,7 +32,7 @@ seasons = query(
 )
 latest = seasons.iloc[-1]
 
-# --- Who he is -----------------------------------------------------------------
+# --- Profile ------------------------------------------------------------------
 st.header(latest.full_name)
 columns = st.columns(5)
 columns[0].metric("Age", latest.age)
@@ -39,7 +40,7 @@ columns[1].metric("Nationality", latest.nationality or "-")
 columns[2].metric("Position", latest.position or "-")
 columns[3].metric("Team", latest.team_name or "-")
 value = latest.market_value_eur
-columns[4].metric("Market value", f"€{value / 1e6:.1f}m" if value == value else "-")
+columns[4].metric("Market value", f"€{value / 1e6:.1f}m" if pd.notna(value) else "-")
 
 # --- Seasons --------------------------------------------------------------------
 st.subheader("Seasons")
@@ -58,7 +59,7 @@ st.dataframe(
             "market_value_eur",
             "stats_source",
         ]
-    ],  # fmt: skip
+    ],
     hide_index=True,
     column_config={
         "season_label": "Season",

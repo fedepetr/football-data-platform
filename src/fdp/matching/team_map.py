@@ -252,7 +252,7 @@ def transfermarkt_rows(
                 club,
                 clubs.get(club, ""),
                 **review_columns(match, vote, reasons),
-            )  # fmt: skip
+            )
         )
     return rows
 
@@ -302,6 +302,5 @@ def main() -> None:
     logger.info("wrote %s: %d rows, %d to review", path, len(rows), to_review)
 
 
-# Runs only when the file is executed directly, not when it is imported (tests, Dagster).
 if __name__ == "__main__":
     main()

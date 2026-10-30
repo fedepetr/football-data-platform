@@ -58,7 +58,7 @@ sources:
     timeout_seconds: 30
     # Arrival checks on each CSV: these columns must exist, with at least `min_rows` matches.
     # Only 1 row: the current season holds played matches only (0 before kickoff).
-    # Completeness (380 matches per finished season) is a dbt test in phase 3.
+    # Completeness (380 matches per finished season) is a dbt test.
     min_rows: 1
     required_columns: [Div, Date, HomeTeam, AwayTeam, FTHG, FTAG, FTR]
 
@@ -72,7 +72,7 @@ sources:
     # Tables loaded once, in this order: appearances is filtered on the loaded games.
     # `required_columns` are the arrival checks: at least the key of each table.
     # `scope`: games and appearances keep only competitions and seasons in scope;
-    # every other table is loaded in full (as the brief asks for players).
+    # every other table is loaded in full (players who changed league stay matchable).
     tables:
       competitions:
         required_columns: [competition_id]
@@ -91,7 +91,7 @@ sources:
       transfers:
         required_columns: [player_id, transfer_date]
 
-# Player reconciliation (football-data.org -> Transfermarkt), rules from the brief.
+# Player reconciliation (football-data.org -> Transfermarkt).
 matching:
   players:
     # Score 0-100: above `auto` matched automatically, from `review` to `auto`
