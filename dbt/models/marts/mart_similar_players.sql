@@ -8,11 +8,29 @@
 --    standard deviations above or below the average. Goals and cards then weigh
 --    the same, and an attacker is compared with attackers only.
 -- 4. Similarity = Euclidean distance between the z-score vectors; the
---    `similar_players_top_n` closest players are kept.
+--    `similar_players_top_n` closest players are kept, in two scopes:
+--    - all_competitions: Serie A and Premier League together (cross-league scouting);
+--    - same_competition: only players of the player's own league.
+--    z-scores are computed on both leagues together in both scopes, so distances
+--    are on the same scale; the scope only changes who the candidates are.
 -- With five simple features, "similar" means a similar output (goals, assists,
 -- discipline, playing time), not a similar playing style: event data would be needed.
 
-with player_seasons as (
+-- Main league of each player-season: the one with most minutes (a player who
+-- moved from the Premier League to Serie A in January belongs to one of them).
+with main_competition as (
+
+    select player_key, season_key, arg_max(competition_key, minutes) as competition_key
+    from (
+        select player_key, season_key, competition_key, sum(minutes_played) as minutes
+        from {{ ref('fct_player_appearance') }}
+        group by all
+    )
+    group by all
+
+),
+
+player_seasons as (
 
     select
         appearances.player_key,
@@ -34,9 +52,10 @@ with player_seasons as (
 per_90 as (
 
     select
-        player_key,
-        season_key,
-        position,
+        player_seasons.player_key,
+        player_seasons.season_key,
+        player_seasons.position,
+        main_competition.competition_key,
         minutes,
         goals * 90.0 / minutes as goals_per_90,
         assists * 90.0 / minutes as assists_per_90,
@@ -45,6 +64,7 @@ per_90 as (
         -- 38 matches of 90 minutes in a 20-team league season.
         minutes / (38 * 90.0) as minutes_share
     from player_seasons
+    join main_competition using (player_key, season_key)
 
 ),
 
@@ -56,6 +76,7 @@ z_scores as (
         player_key,
         season_key,
         position,
+        competition_key,
         {% for feature in ['goals_per_90', 'assists_per_90', 'yellow_cards_per_90', 'red_cards_per_90', 'minutes_share'] %}
         coalesce(
             ({{ feature }} - avg({{ feature }}) over peers)
@@ -75,7 +96,9 @@ distances as (
         player.player_key,
         player.season_key,
         player.position,
+        player.competition_key,
         other.player_key as similar_player_key,
+        other.competition_key as similar_competition_key,
         sqrt(
             {% for feature in ['goals_per_90', 'assists_per_90', 'yellow_cards_per_90', 'red_cards_per_90', 'minutes_share'] %}
             power(player.z_{{ feature }} - other.z_{{ feature }}, 2){{ " +" if not loop.last }}
@@ -89,14 +112,29 @@ distances as (
 
 ),
 
+-- The same pairs in the two scopes: all of them, and only same-league ones.
+scoped as (
+
+    select *, 'all_competitions' as comparison_scope
+    from distances
+
+    union all
+
+    select *, 'same_competition' as comparison_scope
+    from distances
+    where similar_competition_key = competition_key
+
+),
+
 ranked as (
 
     select
         *,
         row_number() over (
-            partition by player_key, season_key order by distance, similar_player_key
+            partition by player_key, season_key, comparison_scope
+            order by distance, similar_player_key
         ) as similarity_rank
-    from distances
+    from scoped
 
 )
 
@@ -105,9 +143,12 @@ select
     players.full_name as player_name,
     ranked.season_key,
     ranked.position,
+    ranked.competition_key,
+    ranked.comparison_scope,
     ranked.similarity_rank,
     ranked.similar_player_key,
     similar_player.full_name as similar_player_name,
+    ranked.similar_competition_key,
     round(ranked.distance, 3) as distance,
     -- 100 for identical statistics, lower as the distance grows.
     round(100 / (1 + ranked.distance), 1) as similarity

@@ -509,6 +509,13 @@ symmetric: A's neighbours may not include B).
 4. Euclidean distance between the z-score vectors, all pairs (brute force:
    about 60k distances per season, instant in DuckDB); the 5 closest kept
    (dbt var `similar_players_top_n`). `similarity` = 100 / (1 + distance).
+5. Two scopes (`comparison_scope`): `all_competitions` (both leagues together,
+   for cross-league scouting) and `same_competition` (only the player's league,
+   always 5 results). The league is the one with most minutes in the season.
+   z-scores use both leagues in both scopes, so distances are comparable; the
+   scope only changes the candidates. Added because filtering the cross-league
+   list afterwards left fewer than 5 neighbours (about half of them were from
+   the other league).
 
 Example, Lautaro Martínez 2025/26 (0.70 goals and 0.25 assists per 90, 64% of
 minutes): Marcus Thuram (distance 1.03), Nikola Krstović, Richarlison, João Pedro,
@@ -781,6 +788,7 @@ football-data.org token is the repository secret `FOOTBALL_DATA_ORG_TOKEN`
 | 2026-10-29 | Player profile: one stats source per season, never mixed within a row | No source covers every season; mixing would blend different definitions (assists) |
 | 2026-10-29 | Similar players by exact kNN on per-90 z-scores within position | A player card needs a personal neighbour list, not groups; the data is small enough for all pairs |
 | 2026-10-29 | 900-minute minimum and top 5 as dbt vars | Tunable without touching the SQL |
+| 2026-10-30 | Similar players in two scopes: all competitions and same competition | Filtering the cross-league top 5 by league left fewer than 5; both views are useful (scouting vs league peers) |
 | 2026-10-30 | Weekly GitHub Actions run rebuilds everything instead of caching data | Runners are stateless and caches expire after 7 days unused; 5 minutes, always reproducible |
 | 2026-10-30 | Dagster schedule refreshes the current-season partition only | What a deployment with persistent storage would run; Transfermarkt is a frozen snapshot |
 | 2026-10-30 | Expected matches per season computed as teams x (teams - 1), not hard-coded 380 | Works for leagues of any size; checks completed seasons only, using `is_current` |
