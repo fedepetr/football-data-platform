@@ -12,7 +12,7 @@ Updated at the end of every phase.
 | 1 | Ingestion of the three sources into `raw` | done (PR pending) |
 | 2 | dbt staging and core, player reconciliation | done (PR pending) |
 | 3 | Marts, data quality tests, Dagster schedule, CI | done (PR pending) |
-| 4 | README, architecture diagram, demo | todo |
+| 4 | README, architecture diagram, demo | in progress (README done) |
 
 ## Workflow
 
@@ -35,7 +35,8 @@ Updated at the end of every phase.
 football-data-platform/
   pyproject.toml / uv.lock / .python-version
   .env.example
-  README.md
+  README.md                          # project overview for readers (architecture, results, limits)
+  docs/queries.sql                   # example queries for a demo, with comments
   docs/DEVELOPMENT.md
   config/pipeline.yaml               # seasons, competitions, source parameters
   data/raw/<source>/<season>/        # git-ignored, recreated by the pipeline
@@ -509,6 +510,13 @@ symmetric: A's neighbours may not include B).
 4. Euclidean distance between the z-score vectors, all pairs (brute force:
    about 60k distances per season, instant in DuckDB); the 5 closest kept
    (dbt var `similar_players_top_n`). `similarity` = 100 / (1 + distance).
+5. Two scopes (`comparison_scope`): `all_competitions` (both leagues together,
+   for cross-league scouting) and `same_competition` (only the player's league,
+   always 5 results). The league is the one with most minutes in the season.
+   z-scores use both leagues in both scopes, so distances are comparable; the
+   scope only changes the candidates. Added because filtering the cross-league
+   list afterwards left fewer than 5 neighbours (about half of them were from
+   the other league).
 
 Example, Lautaro Martínez 2025/26 (0.70 goals and 0.25 assists per 90, 64% of
 minutes): Marcus Thuram (distance 1.03), Nikola Krstović, Richarlison, João Pedro,
@@ -587,6 +595,30 @@ Settings: `concurrency` prevents two runs at once (single DuckDB writer); the
 football-data.org token is the repository secret `FOOTBALL_DATA_ORG_TOKEN`
 (Settings > Secrets and variables > Actions), never in files.
 
+First runs on GitHub (2026-10-29):
+
+- CI: green on the pull request and on `main` at the first attempt.
+- Weekly pipeline, run by hand: attempt 1 failed in 4 seconds because the secret
+  was missing (the token check stopped it before any API call); attempt 2, after
+  adding the secret, succeeded in about 3 min 40 s: football-data.org and couk
+  2 min 49 s, Transfermarkt 11 s, matching and dbt with all tests 27 s. Artifact:
+  the database, 14.2 MB compressed.
+
+To do: the token error says "set it in .env"; it should also mention the
+repository secret. `dagster asset materialize` prints a SupersessionWarning: the
+new `dg launch --assets` command will replace it (works today, migrate later).
+
+## Demo material
+
+- `docs/queries.sql`: commented queries in the order of the project's story: one
+  person in three sources, reconciliation bands, hard cases fixed by review, the
+  cross-source goals check, the current table with xG, market value risers,
+  similar players (both scopes), the most similar pairs of a league.
+- Exploring the database: the DuckDB UI (`INSTALL ui; LOAD ui; CALL start_ui();`).
+  It needs a writable database for its own state, so open an in-memory
+  connection and attach `data/fdp.duckdb` with `READ_ONLY` (queries then use the
+  `fdp.` prefix). While it is open, nothing else can write to the database.
+
 ## Phases
 
 ### Phase 0 – Skeleton
@@ -629,10 +661,10 @@ football-data.org token is the repository secret `FOOTBALL_DATA_ORG_TOKEN`
 - [x] GitHub Actions: lint + tests on PR (`ci.yml`); weekly pipeline run (`weekly-pipeline.yml`)
 
 ### Phase 4 – Delivery
-- [ ] README: architecture, data model, reconciliation metrics, limitations
+- [x] README: architecture (Mermaid), quick start checked on a fresh clone, data model, reconciliation metrics, limitations
 - [ ] dbt docs generated
 - [ ] Demo: player profile and similar players
-- [ ] Repository made public
+- [x] Repository public (it already was: checked that no secret is in the git history)
 
 ## Data findings
 
@@ -731,7 +763,7 @@ football-data.org token is the repository secret `FOOTBALL_DATA_ORG_TOKEN`
 
 | Date | Decision | Why |
 | --- | --- | --- |
-| 2026-10-29 | Repo private during development, public in phase 4 | Publish only when README and demo are ready |
+| 2026-10-29 | Repo private during development, public in phase 4 | Publish only when README and demo are ready. In fact it was public from the start; the history was checked and contains no secrets |
 | 2026-10-29 | Feature branches + PR into `main`, Conventional Commits | Readable history, CI on PRs from phase 3 |
 | 2026-10-29 | Season code `2627` across the project, converted to `2026` only for the fdorg API | One key to compare the three sources |
 | 2026-10-29 | fdorg: full season refresh instead of the brief's incremental window (`last date - 7 days`) | One call returns the whole season: same cost, simpler replace, no missed postponed matches |
@@ -781,6 +813,7 @@ football-data.org token is the repository secret `FOOTBALL_DATA_ORG_TOKEN`
 | 2026-10-29 | Player profile: one stats source per season, never mixed within a row | No source covers every season; mixing would blend different definitions (assists) |
 | 2026-10-29 | Similar players by exact kNN on per-90 z-scores within position | A player card needs a personal neighbour list, not groups; the data is small enough for all pairs |
 | 2026-10-29 | 900-minute minimum and top 5 as dbt vars | Tunable without touching the SQL |
+| 2026-10-30 | Similar players in two scopes: all competitions and same competition | Filtering the cross-league top 5 by league left fewer than 5; both views are useful (scouting vs league peers) |
 | 2026-10-30 | Weekly GitHub Actions run rebuilds everything instead of caching data | Runners are stateless and caches expire after 7 days unused; 5 minutes, always reproducible |
 | 2026-10-30 | Dagster schedule refreshes the current-season partition only | What a deployment with persistent storage would run; Transfermarkt is a frozen snapshot |
 | 2026-10-30 | Expected matches per season computed as teams x (teams - 1), not hard-coded 380 | Works for leagues of any size; checks completed seasons only, using `is_current` |
@@ -788,6 +821,9 @@ football-data.org token is the repository secret `FOOTBALL_DATA_ORG_TOKEN`
 
 ## Known limitations
 
+- GitHub disables scheduled workflows of public repositories after 60 days
+  without activity: the weekly pipeline then stops until re-enabled from the
+  Actions tab.
 - The Dagster schedule needs the daemon running (`dagster dev` or a deployment);
   on GitHub Actions the weekly workflow rebuilds everything instead.
 - 2026/27 player profiles only exist for scorers, without minutes or cards: the

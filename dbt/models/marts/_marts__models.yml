@@ -54,12 +54,13 @@ models:
       For each player and completed season (at least 900 minutes), the 5 most
       similar players of the same position by statistics per 90 minutes
       (goals, assists, yellow and red cards, share of minutes), standardised as
-      z-scores within season and position. Distance is Euclidean; similarity is
-      100 / (1 + distance).
+      z-scores within season and position over both leagues. Two scopes:
+      all_competitions (both leagues) and same_competition (the player's league).
+      Distance is Euclidean; similarity is 100 / (1 + distance).
     data_tests:
       - unique:
           arguments:
-            column_name: "player_key || '_' || season_key || '_' || similarity_rank"
+            column_name: "player_key || '_' || season_key || '_' || comparison_scope || '_' || similarity_rank"
     columns:
       - name: player_key
         data_tests:
@@ -68,6 +69,26 @@ models:
               arguments:
                 to: ref('dim_player')
                 field: player_key
+      - name: season_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_season')
+                field: season_key
+      - name: competition_key
+        description: League where the player played most minutes in the season.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_competition')
+                field: competition_key
+      - name: comparison_scope
+        description: all_competitions (both leagues) or same_competition (player's league only).
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["all_competitions", "same_competition"]
       - name: similar_player_key
         data_tests:
           - not_null
@@ -75,17 +96,17 @@ models:
               arguments:
                 to: ref('dim_player')
                 field: player_key
+      - name: similar_competition_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_competition')
+                field: competition_key
       - name: similarity_rank
-        description: 1 = most similar.
+        description: 1 = most similar, within the scope.
         data_tests: [not_null]
       - name: position
         data_tests:
           - accepted_values:
               arguments:
                 values: ["Goalkeeper", "Defender", "Midfield", "Attack"]
-      - name: season_key
-        data_tests:
-          - relationships:
-              arguments:
-                to: ref('dim_season')
-                field: season_key
