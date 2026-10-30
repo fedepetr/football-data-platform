@@ -1,6 +1,7 @@
 # Football Data Platform
 
 [![Open the demo](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://football-data-platform-s7m7daktkrbs4pfapp9gqbz.streamlit.app)
+[![dbt docs](https://img.shields.io/badge/dbt-docs-FF694B?logo=dbt&logoColor=white)](https://fedepetr.github.io/football-data-platform/)
 [![CI](https://github.com/fedepetr/football-data-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/fedepetr/football-data-platform/actions/workflows/ci.yml)
 
 A data platform for Serie A and Premier League that integrates three public
@@ -10,9 +11,16 @@ analytics: player profiles and similar players.
 - **Sources**: football-data.org (API), football-data.co.uk (CSV), Transfermarkt (dataset)
 - **Scope**: seasons 2024/25, 2025/26 and 2026/27 (in progress, refreshed weekly)
 - **Stack**: Python 3.12 + uv, DuckDB, dbt, Dagster, GitHub Actions
-- **Result**: 95.0% of football-data.org players matched to Transfermarkt; every
-  played match linked across the three sources; 171 dbt tests and 109 Python tests
-- **Demo**: [football-data-platform-s7m7daktkrbs4pfapp9gqbz.streamlit.app](https://football-data-platform-s7m7daktkrbs4pfapp9gqbz.streamlit.app), refreshed every week
+- **Result** (on 2026-10-30): 95.0% of football-data.org players matched to
+  Transfermarkt; every played match linked across the three sources; 171 dbt tests
+  and 109 Python tests
+
+| Where | What you find |
+| --- | --- |
+| **[Demo](https://football-data-platform-s7m7daktkrbs4pfapp9gqbz.streamlit.app)** | the data: player cards, similar players, data quality (refreshed every Tuesday) |
+| **[dbt docs](https://fedepetr.github.io/football-data-platform/)** | the data model: every table and column, tests, lineage graph (refreshed every Tuesday) |
+| **This README** | the project: architecture, reconciliation method and results, limits |
+| **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** | the development log: data findings, every decision and why |
 
 ## Demo
 
@@ -27,6 +35,11 @@ automatically every Tuesday by the pipeline.
   decided by hand, and the cross-source checks that prove the matches are right.
 
 Run it locally on your own database: `uv run --group demo streamlit run app/streamlit_app.py`.
+On the free plan the online app sleeps after a few days without visits: the first
+visit wakes it up in about a minute.
+
+Numbers in this README were measured on 2026-10-30; the demo's Data quality page
+recomputes them from the latest data.
 
 ## Architecture
 
@@ -211,7 +224,9 @@ A blocking Dagster asset check stops the pipeline if the match rate drops below 
 - `weekly-pipeline.yml`: every Tuesday, a full rebuild on GitHub Actions (three
   sources, matching, dbt with its tests), then the demo app is tested against the
   new data (contract and every page) and the data is published to the `demo-data`
-  release, which the online demo reads. The database is uploaded as an artifact.
+  release, which the online demo reads, and the dbt documentation is regenerated
+  on the new database and published on GitHub Pages. The database is uploaded as
+  an artifact.
 - Dagster schedule `weekly_current_season`: refreshes only the current-season
   partition where the Dagster daemon runs.
 

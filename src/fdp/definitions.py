@@ -56,7 +56,10 @@ def fdorg_raw(context: dg.AssetExecutionContext) -> Iterator[dg.MaterializeResul
     setup_logging()
     token = os.getenv("FOOTBALL_DATA_ORG_TOKEN")
     if not token:
-        raise RuntimeError("FOOTBALL_DATA_ORG_TOKEN is missing: set it in .env")
+        raise RuntimeError(
+            "FOOTBALL_DATA_ORG_TOKEN is missing: set it in .env (locally) "
+            "or as a repository secret (GitHub Actions)"
+        )
 
     with fdorg.make_client(token) as client, connect() as con:
         for season in context.partition_keys:
