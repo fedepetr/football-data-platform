@@ -58,3 +58,19 @@ def test_page_renders_without_errors(page: str | None) -> None:
 
     assert not app.exception, [error.value for error in app.exception]
     assert app.title  # the page drew its title
+
+
+def test_export_writes_contract_columns_only(tmp_path: Path) -> None:
+    """Each contract table becomes a Parquet file with exactly the contract columns."""
+    from export_parquet import export_tables
+
+    con = duckdb.connect()
+    con.execute(f"attach '{DB_PATH}' as fdp (read_only)")
+
+    written = export_tables(con, "fdp", tmp_path)
+
+    assert len(written) == len(CONTRACT)
+    for path in written:
+        table = path.stem
+        exported = con.execute(f"select * from read_parquet('{path}') limit 0").description
+        assert [column[0] for column in exported] == CONTRACT[table][1]

@@ -12,6 +12,10 @@ on:
   # Manual run from the Actions tab.
   workflow_dispatch:
 
+# Write access to the repository contents, only to publish the demo data release.
+permissions:
+  contents: write
+
 # Never two runs at once.
 concurrency:
   group: weekly-pipeline
@@ -63,6 +67,21 @@ jobs:
         run: |
           uv sync --locked --group demo
           uv run --group demo pytest tests/test_app.py -v
+
+      # 5. Publish the demo data: one Parquet file per contract table, attached to
+      #    the `demo-data` release (public download URLs, unlike artifacts). Files are
+      #    replaced every week; the online app reads them from FDP_DEMO_DATA_URL.
+      - name: Publish demo data
+        env:
+          # Token of this run, used by the GitHub CLI (preinstalled on runners).
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          uv run python app/export_parquet.py
+          gh release view demo-data > /dev/null 2>&1 || gh release create demo-data \
+            --title "Demo data (updated weekly)" \
+            --notes "Parquet files read by the online demo app. Replaced by the weekly pipeline." \
+            --prerelease
+          gh release upload demo-data data/demo/*.parquet --clobber
 
       - name: Upload database and dbt results
         if: always()
