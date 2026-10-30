@@ -5,4 +5,7 @@ sources:
     schema: raw
     tables:
       - name: couk_matches
-        description: football-data.co.uk match results and statistics (Serie A I1, Premier League E0).
+        description: >
+          **Grain:** one row per match, one CSV line of football-data.co.uk. **Key:** Div + Date + HomeTeam + AwayTeam (no id in the source).
+
+          football-data.co.uk match results and statistics (Serie A I1, Premier League E0).

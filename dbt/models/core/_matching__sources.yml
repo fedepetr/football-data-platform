@@ -7,6 +7,8 @@ sources:
     tables:
       - name: player_matches
         description: >
+          **Grain:** one row per football-data.org player. **Key:** fdorg_person_id.
+
           Best Transfermarkt candidate for each football-data.org player, with score,
           method, band (auto, review, rejected, manual, manual_no_match, no_candidates)
           and flags.

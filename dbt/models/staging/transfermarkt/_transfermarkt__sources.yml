@@ -6,9 +6,37 @@ sources:
     schema: raw
     tables:
       - name: transfermarkt_competitions
+        description: >
+          **Grain:** one row per competition. **Key:** competition_id.
+
+          Transfermarkt competitions, all of them (65).
       - name: transfermarkt_clubs
+        description: >
+          **Grain:** one row per club. **Key:** club_id.
+
+          Transfermarkt clubs, all of them.
       - name: transfermarkt_players
+        description: >
+          **Grain:** one row per player. **Key:** player_id.
+
+          Transfermarkt players, all of them (about 50,000), with current club and market value.
       - name: transfermarkt_games
+        description: >
+          **Grain:** one row per game. **Key:** game_id.
+
+          Transfermarkt games filtered at load time to the competitions (IT1, GB1) and seasons in scope; `_season` added.
       - name: transfermarkt_appearances
+        description: >
+          **Grain:** one row per player appearance. **Key:** appearance_id.
+
+          Transfermarkt appearances in the loaded games; `_season` from the game.
       - name: transfermarkt_player_valuations
+        description: >
+          **Grain:** one row per player and valuation date. **Key:** player_id + date.
+
+          Transfermarkt market value history, every player.
       - name: transfermarkt_transfers
+        description: >
+          **Grain:** one row per transfer. **Key:** player_id + transfer_date + from_club_id + to_club_id.
+
+          Transfermarkt transfers, every player (future announced ones included here, excluded in staging).

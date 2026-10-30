@@ -240,6 +240,11 @@ Conventions:
   `couk_match_ref`, so the origin of an id is clear once sources are combined.
 - `profiles.yml` uses `../data/fdp.duckdb` (relative to `dbt/`, where both the
   CLI and Dagster run dbt) and `threads: 1` (single writer).
+- Every model, seed and source description starts with
+  `**Grain:** one row per ... **Key:** ...`, and key columns are described, so
+  the dbt docs say what one row is and which columns identify it.
+  `tests/test_dbt_docs.py` reads the manifest and fails if a model, seed or
+  source lacks it.
 - Only built-in generic tests (`unique`, `not_null`, `accepted_values`,
   `relationships`); multi-column uniqueness is tested on an expression,
   e.g. `season || '_' || fdorg_person_id`. No dbt packages so far.
@@ -868,6 +873,7 @@ Found while building it:
 | 2026-10-29 | Player profile: one stats source per season, never mixed within a row | No source covers every season; mixing would blend different definitions (assists) |
 | 2026-10-29 | Similar players by exact kNN on per-90 z-scores within position | A player card needs a personal neighbour list, not groups; the data is small enough for all pairs |
 | 2026-10-29 | 900-minute minimum and top 5 as dbt vars | Tunable without touching the SQL |
+| 2026-10-30 | Grain and key stated in every dbt description, checked by a test on the manifest | The key was only implied by unique tests; readers need "one row per what" first to join correctly |
 | 2026-10-30 | dbt docs as one static page on GitHub Pages, deployed only after a successful run | No server needed; never publishes the documentation of a failed build |
 | 2026-10-30 | Kaggle credentials removed from `.env.example` | Transfermarkt comes from public files; one credential left (football-data.org) |
 | 2026-10-30 | Demo app in the same repository, in its own folder with its own dependencies | One link for pipeline and demo; a mart change and the app change go in one PR; the contract keeps the boundary |
