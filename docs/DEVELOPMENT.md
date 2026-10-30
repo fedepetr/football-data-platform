@@ -12,7 +12,7 @@ Updated at the end of every phase.
 | 1 | Ingestion of the three sources into `raw` | done (PR pending) |
 | 2 | dbt staging and core, player reconciliation | done (PR pending) |
 | 3 | Marts, data quality tests, Dagster schedule, CI | done (PR pending) |
-| 4 | README, architecture diagram, demo | in progress (README and demo done; dbt docs left) |
+| 4 | README, architecture diagram, demo | done |
 
 ## Workflow
 
@@ -604,9 +604,25 @@ First runs on GitHub (2026-10-29):
   2 min 49 s, Transfermarkt 11 s, matching and dbt with all tests 27 s. Artifact:
   the database, 14.2 MB compressed.
 
-To do: the token error says "set it in .env"; it should also mention the
-repository secret. `dagster asset materialize` prints a SupersessionWarning: the
-new `dg launch --assets` command will replace it (works today, migrate later).
+Follow-ups: the token error now mentions both `.env` and the repository secret.
+The workflows use the current major versions of the actions (checkout v7,
+setup-uv v10, upload-artifact v7, upload-pages-artifact v5, deploy-pages v5), which
+run on Node.js 24: GitHub had flagged the previous ones (Node.js 20, deprecated).
+Still open: `dagster asset materialize` prints a SupersessionWarning, the new
+`dg launch --assets` command will replace it (works today, migrate later).
+
+### dbt documentation on GitHub Pages
+
+https://fedepetr.github.io/football-data-platform/ - the standard dbt docs site
+(dbt's own interface) with our content: descriptions of every source, model and
+column from the YAML files, tests, compiled SQL, lineage graph, and the catalog
+(column types and row counts) read from the database. It shows the metadata of
+the data, not the rows: the rows are in the demo.
+
+The weekly workflow runs `dbt docs generate --static` right after the rebuild
+(one self-contained HTML file, 3.2 MB) and a second job, `docs`, deploys it to
+GitHub Pages only if the pipeline succeeded. One-time setting: Settings > Pages >
+Source: GitHub Actions (a repository decides to publish a website, not a workflow).
 
 ## Demo app
 
@@ -701,7 +717,7 @@ Found while building it:
 
 ### Phase 4 – Delivery
 - [x] README: architecture (Mermaid), quick start checked on a fresh clone, data model, reconciliation metrics, limitations
-- [ ] dbt docs generated
+- [x] dbt docs generated and published on GitHub Pages every week
 - [x] Demo: player profile, similar players and data quality, online and refreshed weekly
 - [x] Repository public (it already was: checked that no secret is in the git history)
 
@@ -852,6 +868,8 @@ Found while building it:
 | 2026-10-29 | Player profile: one stats source per season, never mixed within a row | No source covers every season; mixing would blend different definitions (assists) |
 | 2026-10-29 | Similar players by exact kNN on per-90 z-scores within position | A player card needs a personal neighbour list, not groups; the data is small enough for all pairs |
 | 2026-10-29 | 900-minute minimum and top 5 as dbt vars | Tunable without touching the SQL |
+| 2026-10-30 | dbt docs as one static page on GitHub Pages, deployed only after a successful run | No server needed; never publishes the documentation of a failed build |
+| 2026-10-30 | Kaggle credentials removed from `.env.example` | Transfermarkt comes from public files; one credential left (football-data.org) |
 | 2026-10-30 | Demo app in the same repository, in its own folder with its own dependencies | One link for pipeline and demo; a mart change and the app change go in one PR; the contract keeps the boundary |
 | 2026-10-30 | Explicit data contract between platform and app, checked at start-up, in tests and weekly | A renamed column fails a test before it breaks the online page |
 | 2026-10-30 | Demo data published as Parquet on a GitHub release, not committed | Public URLs, replaced weekly, data stays out of git; 0.5 MB with contract columns only |
