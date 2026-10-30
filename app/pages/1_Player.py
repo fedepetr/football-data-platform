@@ -2,7 +2,7 @@
 
 import streamlit as st
 
-from data import query
+from demo_data import query
 
 st.set_page_config(page_title="Player", page_icon="👤", layout="wide")
 st.title("👤 Player")

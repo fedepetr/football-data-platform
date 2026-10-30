@@ -6,7 +6,7 @@ Pages in app/pages/ appear in the sidebar automatically (Streamlit multipage app
 
 import streamlit as st
 
-from data import data_source, query
+from demo_data import data_source, query
 
 st.set_page_config(page_title="Football Data Platform", page_icon="⚽", layout="wide")
 
