@@ -1,5 +1,6 @@
 # Football Data Platform
 
+[![Open the demo](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://football-data-platform-s7m7daktkrbs4pfapp9gqbz.streamlit.app)
 [![CI](https://github.com/fedepetr/football-data-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/fedepetr/football-data-platform/actions/workflows/ci.yml)
 
 A data platform for Serie A and Premier League that integrates three public
@@ -10,7 +11,22 @@ analytics: player profiles and similar players.
 - **Scope**: seasons 2024/25, 2025/26 and 2026/27 (in progress, refreshed weekly)
 - **Stack**: Python 3.12 + uv, DuckDB, dbt, Dagster, GitHub Actions
 - **Result**: 95.0% of football-data.org players matched to Transfermarkt; every
-  played match linked across the three sources; 171 dbt tests and 102 Python tests
+  played match linked across the three sources; 171 dbt tests and 109 Python tests
+- **Demo**: [football-data-platform-s7m7daktkrbs4pfapp9gqbz.streamlit.app](https://football-data-platform-s7m7daktkrbs4pfapp9gqbz.streamlit.app), refreshed every week
+
+## Demo
+
+**[Open the demo](https://football-data-platform-s7m7daktkrbs4pfapp9gqbz.streamlit.app)**: a Streamlit app on the published data, refreshed
+automatically every Tuesday by the pipeline.
+
+- **Player**: profile, season statistics with the source of each number, market
+  value history, and the player's id in each source with how it was matched.
+- **Similar players**: the five closest players by statistics per 90 minutes,
+  within the player's league or across both, with the numbers side by side.
+- **Data quality**: reconciliation bands, score distribution, the hard cases
+  decided by hand, and the cross-source checks that prove the matches are right.
+
+Run it locally on your own database: `uv run --group demo streamlit run app/streamlit_app.py`.
 
 ## Architecture
 
@@ -43,6 +59,8 @@ flowchart LR
     STG -->|Python: player matching| MATCH
     MATCH -->|dbt: map_player| CORE
     CORE -->|dbt| MARTS
+    MARTS -->|weekly export| REL[[GitHub release<br/>Parquet files]]
+    REL --> APP[Streamlit demo]
 
     DAGSTER{{Dagster: assets, partitions,<br/>checks, weekly schedule}} -.orchestrates.-> ING
     DAGSTER -.-> STG
@@ -60,6 +78,9 @@ flowchart LR
   reviewed seed; players in a Python step between staging and core.
 - **Orchestration**: Dagster assets for every raw table, dbt model and the player
   matching, seasons as partitions, dbt tests as asset checks.
+- **Demo** (`app/`): a Streamlit app that reads only the published tables, through
+  a declared data contract (tables and columns), never the pipeline code. Locally
+  it reads `data/fdp.duckdb`; online, the Parquet files of the `demo-data` release.
 
 ## Quick start
 
@@ -89,7 +110,10 @@ requests per minute). Then explore `data/fdp.duckdb` or run the checks:
 ```bash
 uv run pytest
 uv run --directory dbt dbt build
+uv run --group demo streamlit run app/streamlit_app.py   # the demo on your data
 ```
+
+Example queries for exploring the database: [docs/queries.sql](docs/queries.sql).
 
 ## Data sources
 
@@ -185,7 +209,9 @@ A blocking Dagster asset check stops the pipeline if the match rate drops below 
 
 - `ci.yml`: lint, format, dbt parse and tests on every pull request.
 - `weekly-pipeline.yml`: every Tuesday, a full rebuild on GitHub Actions (three
-  sources, matching, dbt with its tests); the database is uploaded as an artifact.
+  sources, matching, dbt with its tests), then the demo app is tested against the
+  new data (contract and every page) and the data is published to the `demo-data`
+  release, which the online demo reads. The database is uploaded as an artifact.
 - Dagster schedule `weekly_current_season`: refreshes only the current-season
   partition where the Dagster daemon runs.
 
@@ -200,6 +226,8 @@ A blocking Dagster asset check stops the pipeline if the match rate drops below 
 - Similar players use five output statistics per 90 minutes: similar output, not
   similar playing style.
 - DuckDB has a single writer: runs are sequential.
+- GitHub pauses scheduled workflows after 60 days without repository activity;
+  the demo data then stops updating until the workflow is re-enabled.
 
 ## Repository layout
 
@@ -209,6 +237,7 @@ src/fdp/ingest/        extraction and raw loading (one module per source)
 src/fdp/matching/      team and player reconciliation
 src/fdp/definitions.py Dagster wiring (assets, checks, job, schedule)
 dbt/                   staging, core and marts models, seeds, tests
+app/                   Streamlit demo, its data contract and Parquet export
 tests/                 pytest
 docs/DEVELOPMENT.md    development log: findings, decisions, review, metrics
 ```
