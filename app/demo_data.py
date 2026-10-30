@@ -2,11 +2,12 @@
 
 The app reads the published tables of the platform (marts, a few core tables and
 the player matches) and never imports the pipeline code: the tables are the
-contract between the two. Two backends, same table names for the pages:
+contract between the two. Where the data comes from, in this order:
 
-- local: the project database data/fdp.duckdb, attached read-only;
-- online: Parquet files published by the weekly pipeline, read from the URL in
-  the FDP_DEMO_DATA_URL environment variable (e.g. a GitHub release download URL).
+1. FDP_DEMO_DATA_URL, if set: a folder or URL with one <table>.parquet per table;
+2. the project database data/fdp.duckdb, if it exists (local runs), read-only;
+3. otherwise the Parquet files of the public `demo-data` release, refreshed every
+   week by the pipeline (Streamlit Community Cloud: no configuration needed).
 
 Each table becomes a view in an in-memory DuckDB, so pages write plain SQL like
 `select * from mart_player_profile` whatever the backend.
@@ -24,13 +25,22 @@ from demo_contract import CONTRACT, missing_columns
 # Table name -> schema in data/fdp.duckdb (from the contract). Online, <name>.parquet.
 TABLES = {table: schema for table, (schema, _) in CONTRACT.items()}
 
-# app/data.py -> project root -> data/fdp.duckdb, wherever streamlit is started from.
+# app/demo_data.py -> project root -> data/fdp.duckdb, wherever streamlit is started from.
 LOCAL_DB = Path(__file__).resolve().parents[1] / "data" / "fdp.duckdb"
+# Public download URL of the release assets published by the weekly pipeline.
+RELEASE_URL = "https://github.com/fedepetr/football-data-platform/releases/download/demo-data"
+
+
+def parquet_base() -> str | None:
+    """Where to read Parquet files from, or None to read the local database."""
+    if url := os.getenv("FDP_DEMO_DATA_URL"):
+        return url.rstrip("/")
+    return None if LOCAL_DB.exists() else RELEASE_URL
 
 
 def data_source() -> str:
-    """Where the data comes from: the Parquet base URL online, the local file otherwise."""
-    return os.getenv("FDP_DEMO_DATA_URL") or str(LOCAL_DB)
+    """Human-readable data source, shown at the bottom of the home page."""
+    return parquet_base() or str(LOCAL_DB)
 
 
 @st.cache_resource
@@ -41,18 +51,12 @@ def connect() -> duckdb.DuckDBPyConnection:
     While the app runs, the pipeline cannot write to it (DuckDB allows one writer).
     """
     con = duckdb.connect()
-    base_url = os.getenv("FDP_DEMO_DATA_URL")
-    if base_url:
+    if base := parquet_base():
         for table in TABLES:
             con.execute(
-                f"create view {table} as "
-                f"select * from read_parquet('{base_url.rstrip('/')}/{table}.parquet')"
+                f"create view {table} as select * from read_parquet('{base}/{table}.parquet')"
             )
     else:
-        if not LOCAL_DB.exists():
-            raise FileNotFoundError(
-                f"{LOCAL_DB} not found: load the data first (see README, Quick start)"
-            )
         con.execute(f"attach '{LOCAL_DB}' as fdp (read_only)")
         for table, schema in TABLES.items():
             con.execute(f"create view {table} as select * from fdp.{schema}.{table}")
