@@ -36,6 +36,8 @@ dev = [
 
 [tool.ruff]
 line-length = 100
+# First-party code for import sorting: the package and the demo app modules.
+src = ["src", "app"]
 target-version = "py312"
 
 [tool.ruff.lint]

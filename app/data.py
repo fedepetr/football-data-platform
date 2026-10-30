@@ -25,6 +25,7 @@ TABLES = {
     "mart_similar_players": "marts",
     "dim_player": "core",
     "dim_team": "core",
+    "fct_match": "core",
     "map_player": "core",
     "fct_player_valuation": "core",
     "fct_player_appearance": "core",
