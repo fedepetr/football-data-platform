@@ -19,19 +19,10 @@ import duckdb
 import pandas as pd
 import streamlit as st
 
-# Table name -> schema in data/fdp.duckdb. Online, each one is <name>.parquet.
-TABLES = {
-    "mart_player_profile": "marts",
-    "mart_similar_players": "marts",
-    "dim_player": "core",
-    "dim_team": "core",
-    "fct_match": "core",
-    "map_player": "core",
-    "fct_player_valuation": "core",
-    "fct_player_appearance": "core",
-    "fct_player_season_scoring": "core",
-    "player_matches": "matching",
-}
+from demo_contract import CONTRACT, missing_columns
+
+# Table name -> schema in data/fdp.duckdb (from the contract). Online, <name>.parquet.
+TABLES = {table: schema for table, (schema, _) in CONTRACT.items()}
 
 # app/data.py -> project root -> data/fdp.duckdb, wherever streamlit is started from.
 LOCAL_DB = Path(__file__).resolve().parents[1] / "data" / "fdp.duckdb"
@@ -65,6 +56,14 @@ def connect() -> duckdb.DuckDBPyConnection:
         con.execute(f"attach '{LOCAL_DB}' as fdp (read_only)")
         for table, schema in TABLES.items():
             con.execute(f"create view {table} as select * from fdp.{schema}.{table}")
+
+    # Fail at start-up with a clear message if the data breaks the contract.
+    available: dict[str, set[str]] = {}
+    for table in TABLES:
+        columns = con.execute(f"select * from {table} limit 0").description
+        available[table] = {column[0] for column in columns}
+    if missing := missing_columns(available):
+        raise RuntimeError(f"The data does not match the app's contract: {missing}")
     return con
 
 

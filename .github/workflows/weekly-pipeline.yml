@@ -57,6 +57,13 @@ jobs:
           uv run dagster asset materialize -m fdp.definitions
           --select "not (group:fdorg or group:couk or group:transfermarkt)"
 
+      # 4. The demo app against the rebuilt database: data contract and every page.
+      #    These tests are skipped in the pull request CI, which has no data.
+      - name: Test the demo app
+        run: |
+          uv sync --locked --group demo
+          uv run --group demo pytest tests/test_app.py -v
+
       - name: Upload database and dbt results
         if: always()
         uses: actions/upload-artifact@v4

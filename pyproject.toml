@@ -45,6 +45,8 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The demo app modules (app/) are importable in tests, as Streamlit makes them in the app.
+pythonpath = ["app"]
 
 [tool.dagster]
 # `uv run dagster dev` loads the Dagster definitions from this module.
