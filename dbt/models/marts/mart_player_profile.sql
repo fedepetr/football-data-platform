@@ -18,17 +18,19 @@ with team_minutes as (
 
 ),
 
+-- Sums are cast to integer: DuckDB sums integers as 128-bit, which tools such as
+-- pandas turn into decimals (12.0 goals instead of 12).
 from_transfermarkt as (
 
     select
         appearances.player_key,
         appearances.season_key,
-        count(*) as appearances,
-        sum(appearances.minutes_played) as minutes_played,
-        sum(appearances.goals) as goals,
-        sum(appearances.assists) as assists,
-        sum(appearances.yellow_cards) as yellow_cards,
-        sum(appearances.red_cards) as red_cards,
+        count(*)::integer as appearances,
+        sum(appearances.minutes_played)::integer as minutes_played,
+        sum(appearances.goals)::integer as goals,
+        sum(appearances.assists)::integer as assists,
+        sum(appearances.yellow_cards)::integer as yellow_cards,
+        sum(appearances.red_cards)::integer as red_cards,
         'transfermarkt' as stats_source
     from {{ ref('fct_player_appearance') }} as appearances
     group by all
@@ -55,12 +57,12 @@ from_fdorg as (
     select
         player_key,
         season_key,
-        sum(played_matches) as appearances,
-        null::bigint as minutes_played,
-        sum(goals) as goals,
-        sum(assists) as assists,
-        null::bigint as yellow_cards,
-        null::bigint as red_cards,
+        sum(played_matches)::integer as appearances,
+        null::integer as minutes_played,
+        sum(goals)::integer as goals,
+        sum(assists)::integer as assists,
+        null::integer as yellow_cards,
+        null::integer as red_cards,
         'fdorg' as stats_source
     from {{ ref('fct_player_season_scoring') }}
     where season_key not in (select distinct season_key from {{ ref('fct_player_appearance') }})

@@ -26,6 +26,9 @@ requires = ["uv_build>=0.10.11,<0.11.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
+demo = [
+    "streamlit>=1.66.1",
+]
 dev = [
     "pytest>=9.2.0",
     "ruff>=0.17.3",
@@ -33,6 +36,8 @@ dev = [
 
 [tool.ruff]
 line-length = 100
+# First-party code for import sorting: the package and the demo app modules.
+src = ["src", "app"]
 target-version = "py312"
 
 [tool.ruff.lint]
@@ -40,6 +45,8 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The demo app modules (app/) are importable in tests, as Streamlit makes them in the app.
+pythonpath = ["app"]
 
 [tool.dagster]
 # `uv run dagster dev` loads the Dagster definitions from this module.
