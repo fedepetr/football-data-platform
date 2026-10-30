@@ -12,9 +12,11 @@ on:
   # Manual run from the Actions tab.
   workflow_dispatch:
 
-# Write access to the repository contents, only to publish the demo data release.
+# Least privilege: write access only where needed.
 permissions:
-  contents: write
+  contents: write   # publish the demo data release
+  pages: write      # publish the dbt documentation on GitHub Pages
+  id-token: write   # required by the GitHub Pages deployment
 
 # Never two runs at once.
 concurrency:
@@ -83,6 +85,20 @@ jobs:
             --prerelease
           gh release upload demo-data data/demo/*.parquet --clobber
 
+      # 6. dbt documentation: one self-contained HTML page (models, columns, tests,
+      #    lineage graph), built on the fresh database so it includes the catalog
+      #    (column types and row counts). Deployed to GitHub Pages by the next job.
+      - name: Generate dbt documentation
+        run: |
+          uv run --directory dbt dbt docs generate --static
+          mkdir -p site
+          cp dbt/target/static_index.html site/index.html
+
+      - name: Upload documentation for GitHub Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
       - name: Upload database and dbt results
         if: always()
         uses: actions/upload-artifact@v4
@@ -92,3 +108,16 @@ jobs:
             data/fdp.duckdb
             dbt/target/run_results.json
           retention-days: 30
+
+  # Publish the dbt documentation (https://fedepetr.github.io/football-data-platform/).
+  # A separate job: GitHub Pages deployments run in the `github-pages` environment.
+  docs:
+    needs: pipeline
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
