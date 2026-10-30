@@ -606,7 +606,7 @@ First runs on GitHub (2026-10-29):
 
 Follow-ups: the token error now mentions both `.env` and the repository secret.
 The workflows use the current major versions of the actions (checkout v7,
-setup-uv v10, upload-artifact v7, upload-pages-artifact v5, deploy-pages v5), which
+setup-uv v10.3.3 (it publishes full versions only, no `v10` tag), upload-artifact v7, upload-pages-artifact v5, deploy-pages v5), which
 run on Node.js 24: GitHub had flagged the previous ones (Node.js 20, deprecated).
 Still open: `dagster asset materialize` prints a SupersessionWarning, the new
 `dg launch --assets` command will replace it (works today, migrate later).
