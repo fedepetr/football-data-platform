@@ -12,7 +12,7 @@ Updated at the end of every phase.
 | 1 | Ingestion of the three sources into `raw` | done (PR pending) |
 | 2 | dbt staging and core, player reconciliation | done (PR pending) |
 | 3 | Marts, data quality tests, Dagster schedule, CI | done (PR pending) |
-| 4 | README, architecture diagram, demo | in progress (README done) |
+| 4 | README, architecture diagram, demo | in progress (README and demo done; dbt docs left) |
 
 ## Workflow
 
@@ -608,6 +608,45 @@ To do: the token error says "set it in .env"; it should also mention the
 repository secret. `dagster asset materialize` prints a SupersessionWarning: the
 new `dg launch --assets` command will replace it (works today, migrate later).
 
+## Demo app
+
+Online: https://football-data-platform-s7m7daktkrbs4pfapp9gqbz.streamlit.app (Streamlit Community Cloud, public).
+Locally: `uv run --group demo streamlit run app/streamlit_app.py`.
+
+Pages: home (key numbers, sources and limits), Player (profile, seasons with the
+source of each row, market value history, ids in each source and how they were
+matched), Similar players (5 neighbours, own league or both, per-90 statistics
+side by side), Data quality (bands, score distribution, hard cases decided by
+hand, goals cross-check, match coverage). Every number is computed from the
+tables at each visit, so the pages stay true after the weekly refresh.
+
+Design:
+
+- Same repository, separate folder `app/` with its own dependencies (`demo`
+  dependency group; `app/requirements.txt` for Streamlit Cloud: streamlit, duckdb,
+  pandas only). The app never imports `src/fdp/`: it reads tables.
+- Data contract (`app/demo_contract.py`): the 10 tables the app reads and the
+  columns the pages use. Checked when the app starts, by `tests/test_app.py`
+  (contract + every page rendered with Streamlit's AppTest; skipped without a
+  database, e.g. in the pull request CI) and by the weekly pipeline right after
+  the rebuild, before publishing.
+- Data access (`app/demo_data.py`): an in-memory DuckDB with one view per table,
+  so pages write plain SQL whatever the backend. Source, in order:
+  `FDP_DEMO_DATA_URL` if set, `data/fdp.duckdb` if it exists, otherwise the public
+  `demo-data` release. No configuration on Streamlit Cloud.
+- Publication: `app/export_parquet.py` writes the contract columns of each table
+  to Parquet (zstd, 0.5 MB in total); the weekly workflow uploads them to the
+  `demo-data` release (prerelease, files replaced with `--clobber`, same URLs).
+  Release assets have public URLs, unlike artifacts; DuckDB reads them directly
+  over HTTPS. The workflow has `contents: write` for this only.
+
+Found while building it:
+
+- `pandas` turns DuckDB's 128-bit integer sums into decimals (12.0 goals): sums
+  in `mart_player_profile` are cast to integer.
+- A module named `data.py` clashed with the repository's `data/` folder when a
+  page started alone: renamed `demo_data.py`.
+
 ## Demo material
 
 - `docs/queries.sql`: commented queries in the order of the project's story: one
@@ -663,7 +702,7 @@ new `dg launch --assets` command will replace it (works today, migrate later).
 ### Phase 4 – Delivery
 - [x] README: architecture (Mermaid), quick start checked on a fresh clone, data model, reconciliation metrics, limitations
 - [ ] dbt docs generated
-- [ ] Demo: player profile and similar players
+- [x] Demo: player profile, similar players and data quality, online and refreshed weekly
 - [x] Repository public (it already was: checked that no secret is in the git history)
 
 ## Data findings
@@ -813,6 +852,9 @@ new `dg launch --assets` command will replace it (works today, migrate later).
 | 2026-10-29 | Player profile: one stats source per season, never mixed within a row | No source covers every season; mixing would blend different definitions (assists) |
 | 2026-10-29 | Similar players by exact kNN on per-90 z-scores within position | A player card needs a personal neighbour list, not groups; the data is small enough for all pairs |
 | 2026-10-29 | 900-minute minimum and top 5 as dbt vars | Tunable without touching the SQL |
+| 2026-10-30 | Demo app in the same repository, in its own folder with its own dependencies | One link for pipeline and demo; a mart change and the app change go in one PR; the contract keeps the boundary |
+| 2026-10-30 | Explicit data contract between platform and app, checked at start-up, in tests and weekly | A renamed column fails a test before it breaks the online page |
+| 2026-10-30 | Demo data published as Parquet on a GitHub release, not committed | Public URLs, replaced weekly, data stays out of git; 0.5 MB with contract columns only |
 | 2026-10-30 | Similar players in two scopes: all competitions and same competition | Filtering the cross-league top 5 by league left fewer than 5; both views are useful (scouting vs league peers) |
 | 2026-10-30 | Weekly GitHub Actions run rebuilds everything instead of caching data | Runners are stateless and caches expire after 7 days unused; 5 minutes, always reproducible |
 | 2026-10-30 | Dagster schedule refreshes the current-season partition only | What a deployment with persistent storage would run; Transfermarkt is a frozen snapshot |
