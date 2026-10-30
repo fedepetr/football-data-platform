@@ -12,8 +12,8 @@ analytics: player profiles and similar players.
 - **Scope**: seasons 2024/25, 2025/26 and 2026/27 (in progress, refreshed weekly)
 - **Stack**: Python 3.12 + uv, DuckDB, dbt, Dagster, GitHub Actions
 - **Result** (on 2026-10-30): 95.0% of football-data.org players matched to
-  Transfermarkt; every played match linked across the three sources; 171 dbt tests
-  and 109 Python tests
+  Transfermarkt; every played match linked across the three sources; 177 dbt tests
+  and 111 Python tests
 
 | Where | What you find |
 | --- | --- |

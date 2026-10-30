@@ -24,7 +24,6 @@ from fdp.ingest.common import (
 )
 
 SOURCE = "fdorg"
-# One logger per module: messages show where they come from (fdp.ingest.fdorg).
 logger = logging.getLogger(__name__)
 
 # All parameters come from config/pipeline.yaml (read once, when the module is imported).
@@ -138,8 +137,8 @@ def ingest_season(
     for endpoint, spec in ENDPOINTS.items():
         # "/competitions/{competition}/matches" -> "/competitions/SA/matches".
         path = spec["path"].format(competition=competition)
-        # Add endpoint-specific parameters (e.g. limit for scorers), if any.
         logger.info("requesting %s %s %s", competition, endpoint, season)
+        # Add endpoint-specific parameters (e.g. limit for scorers), if any.
         payload = get_json(client, path, params | spec.get("params", {}))
         check_payload(payload, spec, f"{competition} {endpoint} {season}")
         # ensure_ascii=False keeps accented names readable in the raw file instead of \u escapes.
@@ -165,12 +164,10 @@ def main() -> None:
     if not token:
         raise SystemExit("FOOTBALL_DATA_ORG_TOKEN is missing: copy .env.example to .env and set it")
 
-    # `with` closes the HTTP client and the database even if an error occurs.
     with make_client(token) as client, connect() as con:
         for competition in COMPETITIONS:
             ingest_season(client, con, competition, season)
 
 
-# Runs only when the file is executed directly, not when it is imported (tests, Dagster).
 if __name__ == "__main__":
     main()

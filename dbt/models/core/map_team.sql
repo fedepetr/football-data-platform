@@ -1,4 +1,4 @@
--- One row per team with its reference in each source (the brief's map_team):
+-- One row per team with its reference in each source:
 -- the seed has one row per team and source, pivoted here into one column per source.
 -- A missing reference stays NULL (e.g. Coventry City has no Transfermarkt club).
 

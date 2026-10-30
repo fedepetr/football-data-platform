@@ -1,6 +1,6 @@
 -- A completed season must have every match of a double round-robin, all finished:
--- teams x (teams - 1) matches (380 for the 20-team Serie A and Premier League,
--- as the brief asks). The expected number comes from the teams in the data, so
+-- teams x (teams - 1) matches (380 for the 20-team Serie A and Premier League).
+-- The expected number comes from the teams in the data, so
 -- the test also works for leagues of another size (e.g. 18 teams -> 306).
 -- Returns the competition-seasons that do not add up.
 

@@ -1,7 +1,7 @@
 [project]
 name = "fdp"
 version = "0.1.0"
-description = "football data platform"
+description = "Serie A and Premier League data platform: three sources reconciled with DuckDB, dbt and Dagster"
 readme = "README.md"
 authors = [
     { name = "Federico Petraccia", email = "federico.petraccia95@gmail.com" }

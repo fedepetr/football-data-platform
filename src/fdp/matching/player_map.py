@@ -1,11 +1,11 @@
 """Player reconciliation run: football-data.org players -> Transfermarkt players.
 
 For every football-data.org player (squads and scorers):
-1. Candidates (brief rule 2): Transfermarkt players with the same birth date, or
+1. Candidates: Transfermarkt players with the same birth date, or
    in the same team and season. Team and season come from Transfermarkt
    appearances (2024/25, 2025/26) and, for 2026/27, the current club in the
    Transfermarkt snapshot (July 2026); teams are linked through core.map_team.
-2. Best candidate by the brief's score (players.py), banded auto/review/rejected.
+2. Best candidate by name score (players.py), banded auto/review/rejected.
 3. Checks demote an "auto" match to "review": a tie, a collision (football-data.org
    players with different birth dates picked the same Transfermarkt player) or
    the LCS second opinion rating another candidate higher. football-data.org
@@ -13,8 +13,8 @@ For every football-data.org player (squads and scorers):
    point to the same Transfermarkt player, that is not a collision.
 4. Reverse check on rejected matches: if the candidate was proposed by both rules
    (same birth date AND same team and season) the name is probably a variant the
-   score cannot see (`Max` / `Maximilian Kilman`). The band stays "rejected", as
-   the brief asks, but the flag same_birth_date_and_team lists it for review.
+   score cannot see (`Max` / `Maximilian Kilman`). The band stays "rejected"
+   (the threshold is not bent), but the flag same_birth_date_and_team lists it for review.
 5. Manual corrections (dbt/seeds/player_corrections.csv), re-read at every run,
    override everything.
 The result is written to matching.player_matches (one row per football-data.org
@@ -98,7 +98,7 @@ class Correction:
 
 
 def read_corrections(path: Path = CORRECTIONS_PATH) -> dict[int, Correction]:
-    """Read the manual corrections (re-read at every run, as the brief asks).
+    """Read the manual corrections (re-read at every run, never cached).
 
     Columns: fdorg_person_id, tm_player_id (empty = the player has no match), note.
     """
@@ -295,6 +295,5 @@ def main() -> None:
     logger.info("match rate: %.1f%% of %d players", 100 * match_rate(rows), len(rows))
 
 
-# Runs only when the file is executed directly, not when it is imported (tests, Dagster).
 if __name__ == "__main__":
     main()

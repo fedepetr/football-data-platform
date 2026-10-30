@@ -19,7 +19,6 @@ from fdp.ingest.common import (
 )
 
 SOURCE = "couk"
-# One logger per module: messages show where they come from (fdp.ingest.couk).
 logger = logging.getLogger(__name__)
 # All CSV files of every season and competition end up in this table.
 TABLE = f"{SOURCE}_matches"
@@ -87,12 +86,10 @@ def main() -> None:
     season = sys.argv[1]
     setup_logging()
 
-    # `with` closes the HTTP client and the database even if an error occurs.
     with make_client() as client, connect() as con:
         for competition in COMPETITIONS:
             ingest_season(client, con, competition, season)
 
 
-# Runs only when the file is executed directly, not when it is imported (tests, Dagster).
 if __name__ == "__main__":
     main()
